@@ -10,7 +10,11 @@ import shutil
 import os
 import hashlib
 import tempfile
+import sys
 
+def mkdir_p(p):
+    return p.mkdir(exist_ok=True, parents=True)
+    
 def check_output(cmd, *args, **kwargs):
     #print(' '.join(cmd))
     return sp_output(cmd, *args, **kwargs)
@@ -28,7 +32,7 @@ def file_hash(filename):
     return h.hexdigest()
 
 
-checked_paths = [Path('/etc')]
+checked_paths = [Path(a) for a in sys.argv]
 
 BASE_DIR = Path(__file__).parent
 
@@ -58,32 +62,36 @@ PACMAN_LIST_INSTALLED_PKGS = ['pacman', '-Qn']
 
 PACSTRAP_INSTALL_PKG = ['/usr/bin/pacstrap', '-c', '-G', '-M', '-d'] #+dir + pkgs
 
+def sudo_chmod(path, flags):
+    check_call(['sudo', 'chmod', flags, '-R', path])
+
 def is_system_file(p):
     s = str(p)
     return s.startswith('proc') or s.startswith('sys')
 
-def list_files():
-    pkg_files = CHROOT_PATH.glob('**/*')
-    pkg_files = [p.relative_to(CHROOT_PATH) for p in pkg_files]
+def list_files(chroot_path):
+    pkg_files = chroot_path.glob('**/*')
+    pkg_files = [p.relative_to(chroot_path) for p in pkg_files]
     pkg_files = filter(lambda p: not is_system_file(p), pkg_files)
-    pkg_files = filter(lambda p: (CHROOT_PATH / p).is_file(), pkg_files)
+    pkg_files = filter(lambda p: (chroot_path / p).is_file(), pkg_files)
     return pkg_files
 
 
-def install_pkg(pkg, path, job):
+def install_pkg(chroot_path, pkg, path, job):
     #extract pkg
-    CHROOT_PATH.mkdir(exist_ok=True)
-    d = CHROOT_PATH / 'etc'
-    d.mkdir(exist_ok=True)
+    mkdir_p(chroot_path)
+    d = chroot_path / 'etc'
+    mkdir_p(d)
     d = d / 'pacman.d'
-    d.mkdir(exist_ok=True)
-    pacstrap_cmd = ['sudo'] + PACSTRAP_INSTALL_PKG + [str(CHROOT_PATH), pkg]
-    #print(' '.join(pacstrap_cmd))
+    mkdir_p(d)
+    pacstrap_cmd = ['sudo'] + PACSTRAP_INSTALL_PKG + [str(chroot_path), pkg]
     check_call(['env', 'PATH=%s' % path] + pacstrap_cmd, stdout=DEVNULL)
 
-    r = job()
+    d = str(chroot_path.absolute())
+    sudo_chmod(d, 'ugo=rwx')
+    
+    r = job(chroot_path)
 
-    d = str(CHROOT_PATH.absolute())
     shutil.rmtree(d)
     return r
 
@@ -95,7 +103,7 @@ if STATE_PATH.exists():
 
 def save_state(state):
     state_str = json.dumps(state)
-    STATE_PATH.parent.mkdir(exist_ok=True)
+    mkdir_p(STATE_PATH.parent)
     with STATE_PATH.open('w') as f:
         f.write(state_str)
     
@@ -107,27 +115,27 @@ pkgs = [p.split() for p in pkgs]
 #prepare pacman db
 if PACMAN_DB_PATH.exists():
     shutil.rmtree(str(PACMAN_DB_PATH))
-PACMAN_DB_PATH.mkdir()
+mkdir_p(PACMAN_DB_PATH)
 #check_call('sudo pacman -Sy -b '.split() + [str(PACMAN_DB_PATH)])
 (PACMAN_DB_PATH / 'sync').symlink_to('/var/lib/pacman/sync')
 
 #get list of chroot files
 noop_pacman = Path(pacman_base)
-
 noop_pacman.write_text('#!/usr/bin/env sh\n')
 check_call(['chmod', '+x', str(noop_pacman)], stdout=DEVNULL)
 path = str(noop_pacman.parent.absolute()) + ':' + os.getenv('PATH')
-chroot_files = install_pkg('DUMMY-FOO', path, list_files)
+chroot_files = install_pkg(CHROOT_PATH / 'DUMMY', 'DUMMY', path, list_files)
 
 
-pacman = Path(pacman_base)
+#patch pacman call so that it doesn't sync db /every/ time
+nosync_pacman = Path(pacman_base)
 cmd = "/usr/bin/pacman ${@/'-Sy'/-S} --dbpath %s -dd" % (str(PACMAN_DB_PATH))
-pacman.write_text('''#!/usr/bin/env sh
+nosync_pacman.write_text('''#!/usr/bin/env sh
 echo "%s"
 %s
 ''' % (cmd, cmd))
-check_call(['chmod', '+x', str(pacman)], stdout=DEVNULL)
-path = str(pacman.parent.absolute()) + ':' + os.getenv('PATH')
+check_call(['chmod', '+x', str(nosync_pacman)], stdout=DEVNULL)
+path = str(nosync_pacman.parent.absolute()) + ':' + os.getenv('PATH')
 
 for i, (pkg, version) in enumerate(pkgs):
     #print('------------------(%s/%s): %s' % (i+1, len(pkgs), pkg))
@@ -135,22 +143,23 @@ for i, (pkg, version) in enumerate(pkgs):
     if pkg in state:
         if version in state[pkg]:
             continue
+    chroot_path = CHROOT_PATH / pkg
 
-    def job():
+    def job(_):
         #print('Getting package files...')
-        pkg_files = list_files()
+        pkg_files = list_files(chroot_path)
         pkg_files = filter(lambda p: p not in chroot_files, pkg_files)
         pkg_files = list(pkg_files)
         #print('\n'.join(list(map(str, (pkg_files)))))
 
         #print(pkg_files[0], file_hash(str(CHROOT_PATH / pkg_files[0])))
-        hashes = [file_hash(str(CHROOT_PATH / p)) for p in pkg_files]
+        hashes = [file_hash(str(chroot_path / p)) for p in pkg_files]
         #print(hashes)
 
-        r = list(zip(map(str, pkg_files), hashes))
+        r = list(zip(map(str, [ Path('/') / p for p in pkg_files]), hashes))
         return r
 
-    pkg_files = install_pkg(pkg, path, job)
+    pkg_files = install_pkg(chroot_path, pkg, path, job)
     pkg_files = odict(pkg_files)
     #print('\n'.join(list(map(str, (pkg_files)))))
 
@@ -158,7 +167,7 @@ for i, (pkg, version) in enumerate(pkgs):
     state[pkg][version] = pkg_files
 
 
-    #save_state(state)
+    save_state(state)
     
 
 def search_filepath(p):
@@ -196,8 +205,6 @@ for d in checked_paths:
             if s not in modified_config_files:
                 continue
         else:
-            s = str(p.relative_to('/'))
-            
             phash = search_filepath(s)
             if phash is not None:
                 hash = file_hash(p)
