@@ -1,0 +1,9 @@
+alsa-lib /etc/asound.conf
+base /etc/hostname
+base /etc/machine-id
+base /etc/locale.conf
+systemd /etc/systemd/network/50-wired.network
+lm_sensors /etc/conf.d/lm_sensors
+pulse /etc/pulse/default.pa
+xorg-server /etc/X11/xorg.conf
+xorg-server /etc/X11/xorg.conf.d/50-mouse-acceleration.conf
