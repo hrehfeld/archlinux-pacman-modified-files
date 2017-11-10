@@ -48,7 +48,9 @@ def get_hash(s):
     return h.hexdigest()
 
 machine = socket.gethostname()
-git_repo_path = Path('etc-repo/').absolute()
+
+with Path('.gitrepo').open('r') as f:
+    git_repo_path = Path(f.read().strip()).absolute()
 
 checked_paths = [Path(a) for a in sys.argv[1:]]
 
