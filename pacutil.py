@@ -167,7 +167,6 @@ def save_state(state):
     for pkg in state:
         state_str = json.dumps(state[pkg])
         pkgf = STATE_PATH / (pkg + '.json')
-        print('############# saving state to %s #########' % pkgf)
         with pkgf.open('w') as f:
             f.write(state_str)
     
