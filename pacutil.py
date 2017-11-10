@@ -155,7 +155,7 @@ def load_state():
             state = json.load(f, object_pairs_hook=odict)
 
     if STATE_PATH.exists():
-        for pkgf in STATE_PATH.glob('*'):
+        for pkgf in STATE_PATH.glob('*.json'):
             pkg = pkgf.stem
             with pkgf.open('r') as f:
                 state[pkg] = json.load(f, object_pairs_hook=odict)
