@@ -640,9 +640,9 @@ for pkg, versions in sorted(files.items(), key=lambda t: t[0]):
                         p = git_repo_path / Path(f).relative_to('/')
                         if not p.exists():
                             missing = True
-                            break
-                    assert(not missing)
-                    continue
+                            print('%s is missing' % p)
+                    #assert(not missing)
+                    #continue
                     #fetch org file etc
                 else:
                     if ListComp(natural_comp(tag_version)) < ListComp(natural_comp(branch_tags[pkg][-1])):
