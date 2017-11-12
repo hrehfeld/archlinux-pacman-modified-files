@@ -627,14 +627,14 @@ def git_repo_files():
     return git_split_lines(r)
 
 
-def git_differs(fs):
+def git_differs(fs, integrity_check=False):
     #check if all files are present
     differs = False
     for f in fs:
         fp = Path(f)
         assert(fp.is_absolute())
         p = git_repo_path / fp.relative_to('/')
-        if not p.exists() or file_hash(str(p)) != file_hash(f):
+        if not p.exists() or (integrity_check and file_hash(str(p)) != file_hash(f)):
             differs = True
             print('%s differs from %s' % (p, f))
 
