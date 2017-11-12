@@ -19,7 +19,8 @@ import re
 
 USERNAME = 'hrehfeld'
 
-pkg_blacklist = ['nextcloud-client', 'rtags-git', 'signal-muon-git', 'ttf-google-fonts-git', 'thrust', 'unigine-superposition', 'ttf-material-design-icons', 'google-chrome']
+with Path('.pkg-blacklist').open('r') as f:
+    pkg_blacklist = [p.strip() for p in f.read().split('\n')]
 
 
 INTERNAL_PKG_MARKER = '__'
@@ -63,7 +64,7 @@ ignored_paths = []
 if IGNORE_FILE.exists():
     with IGNORE_FILE.open('r') as f:
         ignored_paths = f.read().split('\n')
-    ignored_paths = list(filter(lambda p: len(p), ignored_paths))
+    ignored_paths = list(filter(lambda p: len(p), [p.strip() for p in ignored_paths]))
 
 TMP_PATH = Path(tempfile.mkdtemp(prefix='pacutil'))
 CHROOT_PATH = TMP_PATH / 'chroot'
@@ -369,17 +370,19 @@ for d in checked_paths:
         files = d.glob('**/*')
 
     for p in files:
+        skip = False
+        for ip in ignored_paths:
+            if str(p).startswith(ip) or str(p.resolve()).startswith(ip):
+                skip = True
+                break
+        if skip:
+            continue
+
         if p.is_symlink():
             p = p.resolve()
         if not p.is_file():
             continue
         s = str(p)
-        skip = False
-        for ip in ignored_paths:
-            if s.startswith(ip):
-                skip = True
-        if skip:
-            continue
 
         pkg = None
         version = None
@@ -419,14 +422,6 @@ def print_paths(l):
 
 
 
-print('### modified')
-print_paths(modified_files)
-print('### orphan')
-print_paths(orphan_files)
-#print('### uncheckable')
-#print_paths(uncheckable_files)
-
-        
             
 def get_orphan_pkgs():
     if ORPHAN_PKGS_FILE.exists():
@@ -452,8 +447,18 @@ def get_orphan_pkgs():
 
 orphan_pkgs = get_orphan_pkgs()
 
-modified_files += [(p, orphan_pkgs[p]) for p in orphan_files if p in orphan_pkgs]
 
+modified_files += [(p, orphan_pkgs[p]) for p in orphan_files if p in orphan_pkgs]
+orphan_files = [p for p in orphan_files if p not in orphan_pkgs]
+
+#print('### modified')
+#print_paths(modified_files)
+print('### orphan')
+print_paths(orphan_files)
+print('### uncheckable')
+print_paths(uncheckable_files)
+
+        
 
 def append_files(file_list, pkg_dict):
     for p, (pkg, version) in file_list:
@@ -613,7 +618,9 @@ if branch not in branches:
 
 
 for pkg, versions in sorted(files.items(), key=lambda t: t[0]):
-
+    assert(len(versions.keys()) <= 2)
+    print(pkg, installed_pkgs)
+    assert(pkg in installed_pkgs)
     #pkg from base branch
     print(pkg, branches)
     if pkg in branches:
@@ -670,7 +677,7 @@ for pkg, versions in sorted(files.items(), key=lambda t: t[0]):
 
             commit_and_tag(fs, version, tag)
             
-    for version, fs in versions.items():
+    def git_machine_branch(version, fs):
         #machine branches
         branch = machine_branch(pkg)
         print('----------%s %s----------' % (branch, version))
@@ -688,10 +695,15 @@ for pkg, versions in sorted(files.items(), key=lambda t: t[0]):
             if branch in branch_tags:
                 if ListComp(natural_comp(tag_escape(version))) < ListComp(natural_comp(branch_tags[branch][-1])):
                     print('ERROR: history rewriting not supported %s %s %s' % (branch, tag_version, branch_tags[branch]))
-                    continue
+                    return
                 git.checkout(tag_name(branch, branch_tags[branch][-1]), force=True)
 
-        git.merge(tag_name(pkg, version))
+        try:
+            git.merge(tag_name(pkg, version))
+        except gitlib.exc.GitCommandError:
+            #merge version not here
+            pass
+        
         gfs = []
         for s in fs:
             src = Path(s)
@@ -703,6 +715,9 @@ for pkg, versions in sorted(files.items(), key=lambda t: t[0]):
 
         commit_and_tag(gfs, version if version is not None else 'initial', tag)
 
+
+    git_machine_branch(installed_pkgs[pkg], sum(versions.values(), []))
+        
 
     #machine master branch
     branch = machine_branch_main()
