@@ -2,7 +2,7 @@
 from subprocess import check_output as sp_output, check_call as sp_call, DEVNULL
 
 import json
-from pathlib import Path
+from extended_pathlib import Path
 
 from collections import OrderedDict as odict
 
@@ -24,6 +24,10 @@ with Path('.pkg-blacklist').open('r') as f:
 
 
 INTERNAL_PKG_MARKER = '__'
+
+def is_git(p):
+    return p.is_dir() and p.name == '.git'
+
 def mkdir_p(p):
     return p.mkdir(exist_ok=True, parents=True)
     
@@ -205,7 +209,7 @@ mkdir_p(PACMAN_DB_PATH)
 #check_call('sudo pacman -Sy -b '.split() + [str(PACMAN_DB_PATH)])
 (PACMAN_DB_PATH / 'sync').symlink_to('/var/lib/pacman/sync')
 
-#get list of chroot files
+#get list of chroot pkg_owned_files
 noop_pacman = Path(pacman_base)
 noop_pacman.write_text('#!/usr/bin/env sh\necho $@')
 check_call(['chmod', '+x', str(noop_pacman)], stdout=DEVNULL)
@@ -278,7 +282,7 @@ for i, (pkg, version) in enumerate(installed_pkgs.items()):
             _path = nosync_pacman()
 
         def job(_):
-            #print('Getting package files...')
+            #print('Getting package pkg_owned_files...')
             pkg_files = list_files(chroot_path)
             pkg_files = filter(lambda p: p not in chroot_files, pkg_files)
             pkg_files = list(pkg_files)
@@ -361,7 +365,7 @@ for pkg, vs in config_files.items():
 owned_files = get_owned_files(installed_pkgs)
 
 orphan_files = []
-modified_files = []
+modified_files = odict()
 uncheckable_files = []
 for d in checked_paths:
     if Path(d).is_file():
@@ -371,15 +375,15 @@ for d in checked_paths:
 
     for p in files:
         skip = False
+        presolved = p.resolve()
         for ip in ignored_paths:
-            if str(p).startswith(ip) or str(p.resolve()).startswith(ip):
+            if str(p).startswith(ip) or str(presolved).startswith(ip):
                 skip = True
                 break
         if skip:
             continue
 
-        if p.is_symlink():
-            p = p.resolve()
+        p = presolved
         if not p.is_file():
             continue
         s = str(p)
@@ -413,12 +417,10 @@ for d in checked_paths:
             orphan_files.append(s)
             continue
 
-        modified_files.append((s, (pkg, version)))
+        modified_files.setdefault(pkg, [])
+        modified_files[pkg].append(s)
 
-
-def print_paths(l):
-    print('\n'.join(map(str, l)))
-    
+modified_files = odict(sorted([fs for fs in modified_files.items()], key=lambda fs: fs[0]))
 
 
 
@@ -440,47 +442,44 @@ def get_orphan_pkgs():
         if pkg.startswith(INTERNAL_PKG_MARKER):
             pkg = pkg.replace('$HOST', machine)
             print(pkg)
-        ver = None
-        r[f] = (pkg, ver)
+        r[f] = pkg
     return r
 
 
-orphan_pkgs = get_orphan_pkgs()
+orphan_pkg_associations = get_orphan_pkgs()
 
+ignored_orphan_files = []
+r = odict()
+for p in orphan_files:
+    if p not in orphan_pkg_associations:
+        ignored_orphan_files.append(p)
+        continue
+    pkg = orphan_pkg_associations[p]
+    r.setdefault(pkg, [])
+    r[pkg].append(p)
+orphan_files = r
 
-modified_files += [(p, orphan_pkgs[p]) for p in orphan_files if p in orphan_pkgs]
-orphan_files = [p for p in orphan_files if p not in orphan_pkgs]
-
+def print_paths(l):
+    print('\n'.join(map(str, l)))
+    
 #print('### modified')
 #print_paths(modified_files)
-print('### orphan')
-print_paths(orphan_files)
+print('### ignored orphans')
+print_paths(ignored_orphan_files)
 print('### uncheckable')
 print_paths(uncheckable_files)
 
-        
-
-def append_files(file_list, pkg_dict):
-    for p, (pkg, version) in file_list:
-        pkg_dict.setdefault(pkg, odict())
-        pkg_dict[pkg].setdefault(version, [])
-        pkg_dict[pkg][version].append(p)
-files = odict()
-append_files([(p, (pkg, version)) for p, (pkg, version) in modified_files if version is None], files)
-append_files(sorted([(p, (pkg, version)) for p, (pkg, version) in modified_files if version is not None]
-                    , key=lambda p: p[1][1]), files)
-
-
-for pkg, versions in sorted(files.items(), key=lambda t: t[0]):
-    print(pkg)
-    for version, fs in versions.items():
-        print('\t%s: %s' % (version, ' '.join(fs)))
+#print
+for pkg, fs in modified_files.items():
+    print(pkg, installed_pkgs[pkg])
+    print('\t%s' % (' '.join(fs)))
 
 TAG_SEP = '#'
 BASE_BRANCH_NAME = 'base'
 BASE_TAG_NAME = '0'
 MACHINE_SEP = '!'
 
+#get git repo
 if git_repo_path.exists():
     git_repo = gitlib.Repo(str(git_repo_path))
     git_repo.git.reset(hard=True)
@@ -491,6 +490,7 @@ else:
 
 git = git_repo.git
 
+
 class Git:
     def __getattr__(self, name):
         g  = getattr(git_repo.git, name)
@@ -499,6 +499,11 @@ class Git:
             return g(*args, **kwargs)
         return f
 git = Git()    
+
+
+def git_split_lines(s):
+    r = [s.strip() for s in s.split('\n')]
+    return [s[2:] if s.startswith('* ') else s for s in r]
 
 def commit_and_tag(files, msg, tag):
     commit_success = False
@@ -521,9 +526,7 @@ def commit_and_tag(files, msg, tag):
             git.tag(tag)
 
 
-def get_file_org(pkg, version, paths):
-    print('------------------(%s/%s): %s %s' % (i+1, len(files), pkg, paths))
-
+def get_file_org(pkg, version, files, outdir):
     chroot_path = CHROOT_PATH / 'org' / pkg
     is_aur = pkg not in installed_native_pkgs
     if is_aur:
@@ -537,8 +540,14 @@ def get_file_org(pkg, version, paths):
 
     def job(_):
         r = []
-        for src, dst in paths:
-            src = chroot_path / src
+        for src in files:
+            src = Path(src)
+            assert(src.is_absolute())
+            rel = src.relative_to('/')
+            src = chroot_path / rel
+            dst = outdir / rel
+            mkdir_p(dst.parent)
+
             assert(src.exists())
             check_output(['sudo', 'cp', '-a', str(src), str(dst)])
             r.append(dst)
@@ -600,14 +609,14 @@ def machine_branch_main():
     return MACHINE_SEP + machine
 
 tags = list(filter(len, git.tag(l=True).split('\n')))
-branch_tags = odict()
+pkg_committed_versions = odict()
 for tag in tags:
     pkg, version = tag_split(tag)
-    branch_tags.setdefault(pkg, [])
-    branch_tags[pkg].append(version)
-print(branch_tags)
-branch_tags = odict([(pkg, list(sorted(versions, key=lambda v: ListComp(natural_comp(v))))) for pkg, versions in branch_tags.items()])
-print(branch_tags)
+    pkg_committed_versions.setdefault(pkg, [])
+    pkg_committed_versions[pkg].append(version)
+pkg_committed_versions = odict([(pkg, list(sorted(versions, key=lambda v: ListComp(natural_comp(v)))))
+                                for pkg, versions in pkg_committed_versions.items()])
+print(pkg_committed_versions)
 
 #machine main branch
 branch = machine_branch_main()
@@ -617,92 +626,98 @@ if branch not in branches:
     git.commit(m='initial', **{'allow-empty': True})
 
 
-for pkg, versions in sorted(files.items(), key=lambda t: t[0]):
-    assert(len(versions.keys()) <= 2)
-    print(pkg, installed_pkgs)
-    assert(pkg in installed_pkgs)
-    #pkg from base branch
-    print(pkg, branches)
+def git_repo_files():
+    r = getattr(git, 'ls-tree')(r='HEAD', **{'name-only': True, 'full-tree': True})
+    return git_split_lines(r)
+
+
+def git_differs(fs):
+    #check if all files are present
+    differs = False
+    for f in fs:
+        fp = Path(f)
+        assert(fp.is_absolute())
+        p = git_repo_path / fp.relative_to('/')
+        if not p.exists() or file_hash(str(p)) != file_hash(f):
+            differs = True
+            print('%s differs from %s' % (p, f))
+
+    #check if files were removed
+    for p in git_repo_files():
+        p = Path(p)
+        if not p.is_file() or is_git(p):
+            continue
+        f = Path('/') / p.relative_to(git_repo_path)
+        if not f.exists():
+            differs = True
+            print('%s differs from %s' % (p, f))
+    return differs
+
+
+pkgs = sorted(list(modified_files.keys()) + list(orphan_files.keys()))
+pkgs_unique = []
+for p in pkgs:
+    if p in pkgs_unique:
+        continue
+    pkgs_unique.append(p)
+pkgs = pkgs_unique
+
+print(pkgs)
+for pkg in pkgs:
+    version = installed_pkgs[pkg]
+    print('----------%s %s----------' % (pkg, version))
+
+    #can only update last version
+    tag_version = tag_escape(version)
+    if pkg in pkg_committed_versions and ListComp(natural_comp(tag_version)) < ListComp(natural_comp(pkg_committed_versions[pkg][-1])):
+        print('ERROR: history rewriting (i.e. downgrading) not supported %s %s %s' % (pkg, tag_version, pkg_committed_versions[pkg]))
+        print(versions)
+        print(natural_comp(tag_version), *[natural_comp(v) for v in pkg_committed_versions[pkg]])
+        continue
+    
+    #create pkg branch from master branch
     if pkg in branches:
         git.checkout(pkg, force=True)
     else:
         git.checkout('master')
         git.checkout(b=pkg)
         git.reset(hard=True)
-        git.commit(m=pkg + '-initial', **{'allow-empty': True})
+        git.commit(m='initial', **{'allow-empty': True})
         git.tag(tag_name(pkg))
 
-    for version, fs in versions.items():
-        #org branches
-        if version is not None:
-            tag = tag_name(pkg, version)
-            if pkg in branch_tags:
-                tag_version = tag_escape(version)
-                if tag_version in branch_tags[pkg]:
-                    git.checkout(tag, force=True)
+    #create org branch
+    tag = tag_name(pkg, version)
+    fs = modified_files.get(pkg, [])
+    for s in fs:
+        assert(not str(s) in orphan_files)
 
-                    #check if files are present
-                    missing = False
-                    for f in fs:
-                        p = git_repo_path / Path(f).relative_to('/')
-                        if not p.exists():
-                            missing = True
-                            print('%s is missing' % p)
-                    #assert(not missing)
-                    #continue
-                    #fetch org file etc
-                else:
-                    if ListComp(natural_comp(tag_version)) < ListComp(natural_comp(branch_tags[pkg][-1])):
-                        print('ERROR: history rewriting not supported %s %s %s' % (pkg, tag_version, branch_tags[pkg]))
-                        print(versions)
-                        print(natural_comp(tag_version), *[natural_comp(v) for v in branch_tags[pkg]])
-                        continue
-                    git.checkout(tag_name(pkg, branch_tags[pkg][-1]), force=True)
-            else:
-                git.checkout(tag_name(pkg), force=True)
-
-            org_fs = []
-            for s in fs:
-                if s in orphan_files:
-                    continue
-                p = Path(s).relative_to('/')
-                dst = git_repo_path / p
-                mkdir_p(dst.parent)
-                org_fs.append((p, dst))
-
-            fs = get_file_org(pkg, version, org_fs)
-            fs = list(map(str, fs))
-            print('GIT: adding %s' % ' '.join(fs))
-
-
-            commit_and_tag(fs, version, tag)
+    if git_differs(fs):
+        fs = get_file_org(pkg, version, fs, git_repo_path)
+        fs = list(map(str, fs))
+        commit_and_tag(fs, version, tag)
             
     def git_machine_branch(version, fs):
         #machine branches
         branch = machine_branch(pkg)
-        print('----------%s %s----------' % (branch, version))
+
+        if branch in pkg_committed_versions and ListComp(natural_comp(tag_escape(version))) < ListComp(natural_comp(pkg_committed_versions[branch][-1])):
+            print('ERROR: history rewriting not supported %s %s %s' % (branch, tag_version, pkg_committed_versions[branch]))
+            return
+        
         try:
             git.checkout(branch)
         except gitlib.exc.GitCommandError:
-            git.checkout(tag_name(pkg))
+            git.checkout(pkg, force=True)
             git.checkout(b=branch)
-            git.commit(m=branch + '-initial', **{'allow-empty': True})
-
+            git.commit(m='initial', **{'allow-empty': True})
+            git.tag(tag_name(branch))
+            
         tag = tag_name(branch, version)
-        if tag in tags:
-            git.checkout(tag, force=True)
-        else:
-            if branch in branch_tags:
-                if ListComp(natural_comp(tag_escape(version))) < ListComp(natural_comp(branch_tags[branch][-1])):
-                    print('ERROR: history rewriting not supported %s %s %s' % (branch, tag_version, branch_tags[branch]))
-                    return
-                git.checkout(tag_name(branch, branch_tags[branch][-1]), force=True)
 
-        try:
-            git.merge(tag_name(pkg, version))
-        except gitlib.exc.GitCommandError:
-            #merge version not here
-            pass
+        merged_branches = git_split_lines(git.branch(merged=True))
+        print(merged_branches)
+        if pkg not in merged_branches:
+            git.merge(pkg)
         
         gfs = []
         for s in fs:
@@ -713,14 +728,16 @@ for pkg, versions in sorted(files.items(), key=lambda t: t[0]):
             gfs.append(str(dst))
 
 
-        commit_and_tag(gfs, version if version is not None else 'initial', tag)
+        commit_and_tag(gfs, version, tag)
 
 
-    git_machine_branch(installed_pkgs[pkg], sum(versions.values(), []))
+    fs = []
+    fs += modified_files.get(pkg, [])
+    fs += orphan_files.get(pkg, [])
+    git_machine_branch(version, fs)
         
 
     #machine master branch
-    branch = machine_branch_main()
-    git.checkout(branch, force=True)
+    git.checkout(machine_branch_main(), force=True)
     git.merge(machine_branch(pkg))
 
