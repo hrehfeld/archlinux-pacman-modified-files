@@ -154,11 +154,6 @@ def install_pkg(chroot_path, pkg, path, job):
 
 def load_state():
     state = odict()
-    old_state = STATE_PATH / 'db.json'
-    if old_state.exists():
-        with old_state.open('r') as f:
-            state = json.load(f, object_pairs_hook=odict)
-
     if STATE_PATH.exists():
         for pkgf in STATE_PATH.glob('*.json'):
             pkg = pkgf.stem
