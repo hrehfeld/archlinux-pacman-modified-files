@@ -17,7 +17,8 @@ import socket
 import git as gitlib
 import re
 
-USERNAME = 'hrehfeld'
+import getpass
+USERNAME = getpass.getuser()
 
 with Path('.pkg-blacklist').open('r') as f:
     pkg_blacklist = [p.strip() for p in f.read().split('\n')]
