@@ -131,9 +131,12 @@ def get_config_files():
 
 PACSTRAP_INSTALL_PKG = ['/usr/bin/pacstrap', '-c', '-G', '-M', '-d'] #+dir + installed_pkgs
 
-def sudo_chmod(path, flags):
-    check_call(['sudo', 'chmod', flags, '-R', str(path)])
-
+def chmod(mode, path, sudo=False):
+    cmd = ['chmod', '-R', mode, str(path)]
+    if sudo:
+        cmd = ['sudo'] + cmd
+    return check_call(cmd, stdout=DEVNULL)
+    
 def is_system_file(p):
     s = str(p)
     return s.startswith('proc') or s.startswith('sys')
@@ -158,7 +161,7 @@ def install_pkg(chroot_path, pkg, path, job):
     )
 
     d = str(chroot_path.absolute())
-    sudo_chmod(d, 'ugo=rwx')
+    chmod('ugo=rwx', d, sudo=True)
     
     r = job(chroot_path)
 
@@ -221,7 +224,7 @@ mkdir_p(PACMAN_DB_PATH)
 #get list of chroot pkg_owned_files
 noop_pacman = Path(pacman_base)
 noop_pacman.write_text('#!/usr/bin/env sh\necho $@')
-sudo_chmod(noop_pacman, '+x')
+chmod('+x', noop_pacman)
 path = str(noop_pacman.parent.absolute()) + ':' + os.getenv('PATH')
 chroot_files = install_pkg(CHROOT_PATH / 'DUMMY', 'DUMMY', path, list_files)
 
@@ -234,13 +237,10 @@ def nosync_pacman():
     echo "%s"
     %s
     ''' % (cmd, cmd))
-    check_call(['chmod', '+x', str(nosync_pacman)], stdout=DEVNULL)
+    chmod('+x', nosync_pacman)
     path = str(nosync_pacman.parent.absolute()) + ':' + os.getenv('PATH')
     return path
 
-def chmod(mode, path):
-    return check_call(['chmod', '-R', mode, str(path)], stdout=DEVNULL)
-    
 
 #patch pacman call so that it doesn't sync db /every/ time
 def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
