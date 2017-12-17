@@ -33,6 +33,12 @@ with Path('.pkg-blacklist').open('r') as f:
 
 INTERNAL_PKG_MARKER = '__'
 
+
+def temp_dir(prefix):
+    path = tempfile.mkdtemp(prefix=prefix)
+    return path
+
+
 def is_git(p):
     return p.is_dir() and p.name == '.git'
 
@@ -232,8 +238,15 @@ def nosync_pacman():
     path = str(nosync_pacman.parent.absolute()) + ':' + os.getenv('PATH')
     return path
 
+def chmod(mode, path):
+    return check_call(['chmod', '-R', mode, str(path)], stdout=DEVNULL)
+    
+
 #patch pacman call so that it doesn't sync db /every/ time
-def aur_pacman(pkg, chroot, version_path):
+def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
+    os.rmdir(pkgbuild_path)
+    os.rmdir(version_path)
+
     aur_pacman = Path(tempfile.mkdtemp(prefix='pacman')) / Path(pacman_base)
     cmd = r"""#!/usr/bin/env sh
     set -x
@@ -253,9 +266,9 @@ def aur_pacman(pkg, chroot, version_path):
     sudo -u $USERNAME -H sh -c "echo \"$VERSION\" > $VERSION_PATH"
     cd ..
     rm -rf $TEMPD
-    """ % (os.getenv('PATH'), USERNAME, str(PACMAN_DB_PATH), tempfile.mkdtemp(prefix='aurbuild-%s' % pkg), pkg, chroot, version_path)
+    """ % (os.getenv('PATH'), USERNAME, str(PACMAN_DB_PATH), pkgbuild_path, pkg, chroot, version_path)
     aur_pacman.write_text(cmd)
-    check_call(['chmod', '+x', str(aur_pacman)], stdout=DEVNULL)
+    chmod('+x', aur_pacman)
     aur_path = str(aur_pacman.parent.absolute()) + ':' + os.getenv('PATH')
     return aur_path
 
@@ -277,10 +290,9 @@ for i, (pkg, version) in enumerate(installed_pkgs.items()):
         is_aur = pkg not in installed_native_pkgs
         if is_aur:
             print('AUR package')
-            version_path = CHROOT_PATH / (pkg + '-version')
-            if version_path.exists():
-                version_path.unlink()
-            _path = aur_pacman(pkg, str(chroot_path), version_path)
+            pkgbuild_path = temp_dir('aurbuild-%s' % pkg)
+            version_path = temp_dir('version-%s' % pkg)
+            _path = aur_pacman(pkg, str(chroot_path), pkgbuild_path, version_path)
         else:
             _path = nosync_pacman()
 
@@ -534,9 +546,8 @@ def get_file_org(pkg, version, files, outdir):
     is_aur = pkg not in installed_native_pkgs
     if is_aur:
         print('AUR package')
-        version_path = CHROOT_PATH / (pkg + '-version')
-        if version_path.exists():
-            version_path.unlink()
+        pkgbuild_path = temp_dir('aurbuild-%s' % pkg)
+        version_path = temp_dir('version-%s' % pkg)
         _path = aur_pacman(pkg, str(chroot_path), version_path)
     else:
         _path = nosync_pacman()
