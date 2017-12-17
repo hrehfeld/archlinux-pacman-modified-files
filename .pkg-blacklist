@@ -1,3 +1,7 @@
+nvidia-egl-wayland-beta
+nvidia-libgl-beta
+opencl-nvidia-beta
+
 nextcloud-client
 rtags-git
 signal-muon-git
@@ -6,6 +10,7 @@ thrust
 unigine-superposition
 ttf-material-design-icons
 google-chrome
+discord
 discord-ptb
 libc++
 libc++abi
