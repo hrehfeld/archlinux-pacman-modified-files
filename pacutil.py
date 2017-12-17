@@ -132,7 +132,7 @@ def get_config_files():
 PACSTRAP_INSTALL_PKG = ['/usr/bin/pacstrap', '-c', '-G', '-M', '-d'] #+dir + installed_pkgs
 
 def sudo_chmod(path, flags):
-    check_call(['sudo', 'chmod', flags, '-R', path])
+    check_call(['sudo', 'chmod', flags, '-R', str(path)])
 
 def is_system_file(p):
     s = str(p)
