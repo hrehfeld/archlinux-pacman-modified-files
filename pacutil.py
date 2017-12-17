@@ -580,7 +580,7 @@ def get_file_org(pkg, version, files, outdir):
         print('AUR package')
         pkgbuild_path = temp_dir('aurbuild-%s' % pkg)
         version_path = temp_dir('version-%s' % pkg)
-        _path = aur_pacman(pkg, str(chroot_path), version_path)
+        _path = aur_pacman(pkg, str(chroot_path), pkgbuild_path, version_path)
     else:
         _path = nosync_pacman()
 
