@@ -17,8 +17,15 @@ import socket
 import git as gitlib
 import re
 
-import getpass
-USERNAME = getpass.getuser()
+import argparse
+
+p = argparse.ArgumentParser(description='check archlinux (config) files for changes')
+p.add_argument('username', help='non-root username for building pkgs, etc.')
+p.add_argument('paths', nargs='+')
+args = p.parse_args()
+
+
+USERNAME = args.username
 
 with Path('.pkg-blacklist').open('r') as f:
     pkg_blacklist = [p.strip() for p in f.read().split('\n')]
@@ -58,7 +65,7 @@ machine = socket.gethostname()
 with Path('.gitrepo').open('r') as f:
     git_repo_path = Path(f.read().strip()).absolute()
 
-checked_paths = [Path(a) for a in sys.argv[1:]]
+checked_paths = [Path(a) for a in args.paths]
 
 BASE_DIR = Path(__file__).parent
 
