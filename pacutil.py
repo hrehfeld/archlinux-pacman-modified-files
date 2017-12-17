@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 from subprocess import check_output as sp_output, check_call as sp_call, DEVNULL
+import subprocess
 
 import json
 from extended_pathlib import Path
@@ -14,10 +15,12 @@ import sys
 
 import socket
 
-import git as gitlib
 import re
 
 import argparse
+
+import config
+
 
 p = argparse.ArgumentParser(description='check archlinux (config) files for changes')
 p.add_argument('username', help='non-root username for building pkgs, etc.')
@@ -39,8 +42,8 @@ def temp_dir(prefix):
     return path
 
 
-def is_git(p):
-    return p.is_dir() and p.name == '.git'
+def is_repo(p):
+    return p.is_dir() and p.name == '.hg'
 
 def mkdir_p(p):
     return p.mkdir(exist_ok=True, parents=True)
@@ -68,8 +71,7 @@ def get_hash(s):
 
 machine = socket.gethostname()
 
-with Path('.gitrepo').open('r') as f:
-    git_repo_path = Path(f.read().strip()).absolute()
+repo_path = Path(config.repo_path.strip()).absolute()
 
 checked_paths = [Path(a) for a in args.paths]
 
@@ -494,52 +496,81 @@ BASE_BRANCH_NAME = 'base'
 BASE_TAG_NAME = '0'
 MACHINE_SEP = '!'
 
-#get git repo
-if git_repo_path.exists():
-    git_repo = gitlib.Repo(str(git_repo_path))
-    git_repo.git.reset(hard=True)
-else:
-    git_repo = gitlib.Repo.init(str(git_repo_path))
-    git = git_repo.git
-    git.commit(m='initial', **{'allow-empty': True})
-
-git = git_repo.git
-
-
-class Git:
+class hg:
+    class HgException(Exception):
+        pass
+    
+    def __init__(self, repo_path):
+        self.repo_path = repo_path
+        
     def __getattr__(self, name):
-        g  = getattr(git_repo.git, name)
         def f(*args, **kwargs):
-            print('git %s %s %s' % (name, ' '.join(['--%s=%s' % x for x in kwargs.items()]), ' '.join(map(str, args))))
-            return g(*args, **kwargs)
+            args = [str(a) for a in args]
+            kws = []
+            for k, v in kwargs.items():
+                if v is False:
+                    continue
+                
+                if len(k) > 1:
+                    n = '--' + k
+                else:
+                    n = '-' + k
+                kws.append(n)
+                if v not in [True, None]:
+                    kws.append(str(v))
+                    
+            cmd = ['hg', name, *kws, *args]
+            print(' '.join(cmd))
+            try:
+                r = check_output(cmd, cwd=self.repo_path, universal_newlines=True, bufsize=16384 * 16)
+            except subprocess.CalledProcessError as e:
+                raise hg.HgException(str(e))
+            return r
         return f
-git = Git()    
 
+    def empty_commit(self, msg):
+        t = Path(self.repo_path) / '.empty'
+        t.write_text('')
+        repo.add(t)
+        repo.commit(m=msg)
+        repo.rm(t)
+        repo.commit(m=msg, amend=True)
+
+    def commit_merge(self, branch):
+        cur = self.branch().strip()
+        if split_lines(self.merge(branch, P=True)):
+            self.merge(branch)
+            self.commit(m='mrg: %s into %s' % (branch, cur))
+        
+
+
+#get repo
+repo = hg(str(repo_path))
+if repo_path.exists():
+    pass
+else:
+    repo_path.mkdir()
+    repo.init()
+    repo.empty_commit('initial')
+
+
+def split_lines(s):
+    ls = [s.strip() for s in s.split('\n')]
+    ls = [l for l in ls if l]
+    return ls
 
 def git_split_lines(s):
-    r = [s.strip() for s in s.split('\n')]
+    r = split_lines(s)
     return [s[2:] if s.startswith('* ') else s for s in r]
 
 def commit_and_tag(files, msg, tag):
-    git.add(*files)
+    repo.add(*files)
     
-    commit_success = False
-    try:
-        git.commit(*files, m=msg)
-        commit_success = True
-        
-    except gitlib.exc.GitCommandError as e:
-        #nothing to commit
-        print(e)
-        pass
+    if repo.diff():
+        repo.commit(*files, m=msg)
 
-    #reassign tag
-    try:
-        git.tag(tag)
-    except gitlib.exc.GitCommandError as e:
-        if commit_success:
-            git.tag(tag, d=True)
-            git.tag(tag)
+        #reassign tag
+        repo.tag(tag, local=True, force=True)
 
 
 def get_file_org(pkg, version, files, outdir):
@@ -598,11 +629,10 @@ class ListComp:
         return False
                 
 
-        
+def repo_has_branch(branch):
+    return branch in split_lines(repo.branches(q=True))
 
-branches = list(filter(len, git.branch(l=True).split('\n')))
-branches = [b[1:] if b.startswith('*') else b for b in branches]
-branches = [b.strip() for b in branches]
+branches = split_lines(repo.branches(q=True))
 print(branches)
 
 def tag_escape(tag):
@@ -623,7 +653,10 @@ def machine_branch(pkg):
 def machine_branch_main():
     return MACHINE_SEP + machine
 
-tags = list(filter(len, git.tag(l=True).split('\n')))
+tags = split_lines(repo.tags(q=True))
+#hg
+tags = [t for t in tags if t != 'tip']
+print(tags)
 pkg_committed_versions = odict()
 for tag in tags:
     pkg, version = tag_split(tag)
@@ -636,33 +669,42 @@ print(pkg_committed_versions)
 #machine main branch
 branch = machine_branch_main()
 if branch not in branches:
-    git.checkout('master')
-    git.checkout(b=branch, force=True)
-    git.commit(m='initial', **{'allow-empty': True})
+    #raise Exception('please create a branch named !%s with an initial commit' % (machine))
+    repo.update('default', clean=True)
+    repo.branch(branch)
+    repo.empty_commit('initial')
 
 
 def git_repo_files():
     r = getattr(git, 'ls-tree')(r='HEAD', **{'name-only': True, 'full-tree': True})
     return git_split_lines(r)
 
+def hg_repo_files():
+    r = repo.status(A=True)
+    ls = split_lines(r)
+    ls = [l.split(' ', 1)[1] for l in ls if not l.startswith('?')]
+    return ls
 
-def git_differs(fs, integrity_check=False):
+repo_files = hg_repo_files
+
+
+def repo_differs(fs, integrity_check=False):
     #check if all files are present
     differs = False
     for f in fs:
         fp = Path(f)
         assert(fp.is_absolute())
-        p = git_repo_path / fp.relative_to('/')
+        p = repo_path / fp.relative_to('/')
         if not p.exists() or (integrity_check and file_hash(str(p)) != file_hash(f)):
             differs = True
             print('%s differs from %s' % (p, f))
 
     #check if files were removed
-    for p in git_repo_files():
+    for p in repo_files():
         p = Path(p)
-        if not p.is_file() or is_git(p):
+        if not p.is_file() or is_repo(p):
             continue
-        f = Path('/') / p.relative_to(git_repo_path)
+        f = Path('/') / p.relative_to(repo_path)
         if not f.exists():
             differs = True
             print('%s differs from %s' % (p, f))
@@ -691,68 +733,65 @@ for pkg in pkgs:
         continue
     
     #create pkg branch from master branch
-    if pkg in branches:
-        git.checkout(pkg, force=True)
+    if repo_has_branch(pkg):
+        repo.update(pkg, clean=True)
     else:
-        git.checkout('master')
-        git.checkout(b=pkg)
-        git.reset(hard=True)
-        git.commit(m='initial', **{'allow-empty': True})
-        git.tag(tag_name(pkg))
+        repo.update('default', clean=True)
+        repo.branch(pkg)
 
     #create org branch
     tag = tag_name(pkg, version)
     fs = modified_files.get(pkg, [])
     for s in fs:
         assert(not str(s) in orphan_files)
+    print('with files: %s' % ' '.join(fs))
 
-    if git_differs(fs):
-        fs = get_file_org(pkg, version, fs, git_repo_path)
+    if repo_differs(fs):
+        fs = get_file_org(pkg, version, fs, repo_path)
         fs = list(map(str, fs))
         commit_and_tag(fs, version, tag)
             
-    def git_machine_branch(version, fs):
+    def repo_machine_branch(version, fs):
         #machine branches
         branch = machine_branch(pkg)
 
         if branch in pkg_committed_versions and ListComp(natural_comp(tag_escape(version))) < ListComp(natural_comp(pkg_committed_versions[branch][-1])):
             print('ERROR: history rewriting not supported %s %s %s' % (branch, tag_version, pkg_committed_versions[branch]))
             return
-        
-        try:
-            git.checkout(branch)
-        except gitlib.exc.GitCommandError:
-            git.checkout(pkg, force=True)
-            git.checkout(b=branch)
-            git.commit(m='initial', **{'allow-empty': True})
-            git.tag(tag_name(branch))
-            
-        tag = tag_name(branch, version)
 
-        merged_branches = git_split_lines(git.branch(merged=True))
-        print(merged_branches)
-        if pkg not in merged_branches:
-            git.merge(pkg)
+        has_pkg_branch = repo_has_branch(pkg)
+        
+        if repo_has_branch(branch):
+            repo.update(branch, clean=True)
+            if has_pkg_branch:
+                repo.commit_merge(pkg)
+        else:
+            base = pkg if has_pkg_branch else 'default'
+            repo.update(base, clean=True)
+            repo.branch(branch)
+            
+
         
         gfs = []
         for s in fs:
             src = Path(s)
-            dst = git_repo_path / src.relative_to('/')
+            dst = repo_path / src.relative_to('/')
             mkdir_p(dst.parent)
             check_output(['sudo', 'cp', '-a', str(src), str(dst)])
             gfs.append(str(dst))
 
 
+        tag = tag_name(branch, version)
         commit_and_tag(gfs, version, tag)
 
 
     fs = []
     fs += modified_files.get(pkg, [])
     fs += orphan_files.get(pkg, [])
-    git_machine_branch(version, fs)
+    repo_machine_branch(version, fs)
         
 
     #machine master branch
-    git.checkout(machine_branch_main(), force=True)
-    git.merge(machine_branch(pkg))
+    repo.update(machine_branch_main(), clean=True)
+    repo.commit_merge(machine_branch(pkg))
 
