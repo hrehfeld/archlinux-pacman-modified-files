@@ -221,7 +221,7 @@ mkdir_p(PACMAN_DB_PATH)
 #get list of chroot pkg_owned_files
 noop_pacman = Path(pacman_base)
 noop_pacman.write_text('#!/usr/bin/env sh\necho $@')
-check_call(['chmod', '+x', str(noop_pacman)], stdout=DEVNULL)
+sudo_chmod(noop_pacman, '+x')
 path = str(noop_pacman.parent.absolute()) + ':' + os.getenv('PATH')
 chroot_files = install_pkg(CHROOT_PATH / 'DUMMY', 'DUMMY', path, list_files)
 
