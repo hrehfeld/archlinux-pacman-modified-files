@@ -521,9 +521,10 @@ def git_split_lines(s):
     return [s[2:] if s.startswith('* ') else s for s in r]
 
 def commit_and_tag(files, msg, tag):
+    git.add(*files)
+    
     commit_success = False
     try:
-        git.add(*files)
         git.commit(*files, m=msg)
         commit_success = True
         
