@@ -72,7 +72,7 @@ def get_hash(s):
 machine = socket.gethostname()
 
 repo_path = Path(config.repo_path.strip()).absolute()
-machine_repo_path = Path(config.machine_repo_path.strip()).absolute()
+machine_repo_path = Path(config.machine_repo_path.strip().replace('$HOST', machine)).absolute()
 
 checked_paths = [Path(a) for a in args.paths]
 
