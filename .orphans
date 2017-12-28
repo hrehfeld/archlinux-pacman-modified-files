@@ -1,4 +1,5 @@
 alsa-lib /etc/asound.conf
+displaycal /etc/xdg/DisplayCAL/DisplayCAL.ini
 filesystem /etc/hostname
 filesystem /etc/machine-id
 filesystem /etc/locale.conf
