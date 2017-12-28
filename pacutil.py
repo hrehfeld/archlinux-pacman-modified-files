@@ -759,7 +759,8 @@ for pkg in pkgs:
     if repo_differs(fs):
         fs = get_file_org(pkg, version, fs, repo_path)
         fs = list(map(str, fs))
-        commit_and_tag(fs, version, tag)
+        msg = '%s %s' % (pkg, version)
+        commit_and_tag(fs, msg, tag)
             
     def repo_machine_branch(version, fs):
         #machine branches
@@ -792,7 +793,8 @@ for pkg in pkgs:
 
 
         tag = tag_name(branch, version)
-        commit_and_tag(gfs, version, tag)
+        msg = '%s %s' % (pkg, version)
+        commit_and_tag(gfs, msg, tag)
 
 
     fs = []
