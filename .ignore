@@ -1,5 +1,4 @@
 /etc/texmf/web2c/fmtutil.cnf
-
 /etc/ssl/certs/
 /etc/ca-certificates/
 /etc/.git/
@@ -11,12 +10,10 @@
 /etc/ssh/ssh_host_dsa_key
 /etc/ssh/ssh_host_rsa_key.pub
 /etc/ssh/ssh_host_ed25519_key.pub
-
 /etc/sudoers
 /etc/shadow
 /etc/shells
 /etc/group
 /etc/passwd
 /etc/gshadow
-
 /etc/gconf/gconf.xml.defaults/%gconf-tree.xml
