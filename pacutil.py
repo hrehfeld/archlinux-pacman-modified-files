@@ -72,6 +72,7 @@ def get_hash(s):
 machine = socket.gethostname()
 
 repo_path = Path(config.repo_path.strip()).absolute()
+machine_repo_path = Path(config.machine_repo_path.strip()).absolute()
 
 checked_paths = [Path(a) for a in args.paths]
 
@@ -542,18 +543,6 @@ class hg:
             self.merge(branch)
             self.commit(m='mrg: %s into %s' % (branch, cur))
         
-
-
-#get repo
-repo = hg(str(repo_path))
-if repo_path.exists():
-    pass
-else:
-    repo_path.mkdir()
-    repo.init()
-    repo.empty_commit('initial')
-
-
 def split_lines(s):
     ls = [s.strip() for s in s.split('\n')]
     ls = [l for l in ls if l]
@@ -562,6 +551,26 @@ def split_lines(s):
 def git_split_lines(s):
     r = split_lines(s)
     return [s[2:] if s.startswith('* ') else s for s in r]
+
+
+def repo_has_branch(branch):
+    return branch in split_lines(repo.branches(q=True))
+
+
+def init_repo(repo_path):
+    repo = hg(str(repo_path))
+    if not repo_path.exists():
+        repo_path.mkdir()
+    if not (repo_path / '.hg').exists():
+        repo.init()
+    return repo
+
+repo = init_repo(repo_path)
+if not repo_has_branch('default'):
+    repo.branch('default')
+    repo.empty_commit('initial')
+
+
 
 def commit_and_tag(files, msg, tag):
     repo.add(*files)
@@ -667,12 +676,12 @@ pkg_committed_versions = odict([(pkg, list(sorted(versions, key=lambda v: ListCo
 print(pkg_committed_versions)
 
 #machine main branch
-branch = machine_branch_main()
-if branch not in branches:
-    #raise Exception('please create a branch named !%s with an initial commit' % (machine))
-    repo.update('default', clean=True)
-    repo.branch(branch)
-    repo.empty_commit('initial')
+#branch = machine_branch_main()
+#if branch not in branches:
+#    #raise Exception('please create a branch named !%s with an initial commit' % (machine))
+#    repo.update('default', clean=True)
+#    repo.branch(branch)
+#    repo.empty_commit('initial')
 
 
 def git_repo_files():
@@ -719,6 +728,7 @@ for p in pkgs:
     pkgs_unique.append(p)
 pkgs = pkgs_unique
 
+machine_branches = []
 print(pkgs)
 for pkg in pkgs:
     version = installed_pkgs[pkg]
@@ -791,7 +801,12 @@ for pkg in pkgs:
     repo_machine_branch(version, fs)
         
 
+
+machine_repo = init_repo(machine_repo_path)
+machine_repo.pull(repo_path)
+machine_repo.update('default')
+for pkg in pkgs:
     #machine master branch
-    repo.update(machine_branch_main(), clean=True)
-    repo.commit_merge(machine_branch(pkg))
+    #machine_repo.update(machine_branch_main(), clean=True)
+    machine_repo.commit_merge(machine_branch(pkg))
 
