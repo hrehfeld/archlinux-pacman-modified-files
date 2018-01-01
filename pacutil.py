@@ -528,10 +528,10 @@ class hg:
     def empty_commit(self, msg):
         t = Path(self.repo_path) / '.empty'
         t.write_text('')
-        repo.add(t)
-        repo.commit(m=msg)
-        repo.rm(t)
-        repo.commit(m=msg, amend=True)
+        self.add(t)
+        self.commit(m=msg)
+        self.rm(t)
+        self.commit(m=msg, amend=True)
 
     def commit_merge(self, branch):
         cur = self.branch().strip()
