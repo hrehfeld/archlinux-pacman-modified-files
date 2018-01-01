@@ -23,12 +23,9 @@ import config
 
 
 p = argparse.ArgumentParser(description='check archlinux (config) files for changes')
-p.add_argument('username', help='non-root username for building pkgs, etc.')
 p.add_argument('paths', nargs='+')
 args = p.parse_args()
 
-
-USERNAME = args.username
 
 with Path('.pkg-blacklist').open('r') as f:
     pkg_blacklist = [p.strip() for p in f.read().split('\n')]
@@ -254,22 +251,21 @@ def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
     cmd = r"""#!/usr/bin/env sh
     set -x
     PATH="%s"
-    USERNAME="%s"
     PACMANDB="%s"
     TEMPD="%s"
     PKG="%s"
     CHROOT="%s"
     VERSION_PATH="%s"
-    sudo -u $USERNAME -H git clone https://aur.archlinux.org/${PKG}.git $TEMPD
+    git clone https://aur.archlinux.org/${PKG}.git $TEMPD
     cd $TEMPD
-    sudo -u $USERNAME -H makepkg -sr --asdeps --noconfirm
+    makepkg -sr --asdeps --noconfirm
     echo env PATH=$PATH /usr/bin/pacman -r $CHROOT -U --noconfirm --dbpath $PACMANDB -dd --nodeps ${TEMPD}/${PKG}*.pkg.tar.xz 
     env PATH=$PATH /usr/bin/pacman -r $CHROOT -U --noconfirm --dbpath $PACMANDB -dd --nodeps ${TEMPD}/${PKG}*.pkg.tar.xz
     VERSION=$(env PATH=$PATH /usr/bin/pacman -Q --dbpath $PACMANDB $PKG)
-    sudo -u $USERNAME -H sh -c "echo \"$VERSION\" > $VERSION_PATH"
+    sh -c "echo \"$VERSION\" > $VERSION_PATH"
     cd ..
     rm -rf $TEMPD
-    """ % (os.getenv('PATH'), USERNAME, str(PACMAN_DB_PATH), pkgbuild_path, pkg, chroot, version_path)
+    """ % (os.getenv('PATH'), str(PACMAN_DB_PATH), pkgbuild_path, pkg, chroot, version_path)
     aur_pacman.write_text(cmd)
     chmod('+x', aur_pacman)
     aur_path = str(aur_pacman.parent.absolute()) + ':' + os.getenv('PATH')
