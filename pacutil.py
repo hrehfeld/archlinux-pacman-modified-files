@@ -22,16 +22,17 @@ import argparse
 import config
 
 
-p = argparse.ArgumentParser(description='check archlinux (config) files for changes')
-p.add_argument('paths', nargs='+')
-args = p.parse_args()
-
-
 with Path('.pkg-blacklist').open('r') as f:
     pkg_blacklist = [p.strip() for p in f.read().split('\n')]
 
 
 INTERNAL_PKG_MARKER = '__'
+TAG_SEP = '#'
+BASE_BRANCH_NAME = 'base'
+BASE_TAG_NAME = '0'
+MACHINE_SEP = '!'
+
+
 
 
 def temp_dir(prefix):
@@ -66,14 +67,12 @@ def get_hash(s):
     h.update(s)
     return h.hexdigest()
 
+BASE_DIR = Path(__file__).parent
+
 machine = socket.gethostname()
 
 repo_path = Path(config.repo_path.strip()).absolute()
 machine_repo_path = Path(config.machine_repo_path.strip().replace('$HOSTNAME', machine)).absolute()
-
-checked_paths = [Path(a) for a in args.paths]
-
-BASE_DIR = Path(__file__).parent
 
 ORPHAN_PKGS_FILE = BASE_DIR / '.orphans'
 
@@ -194,9 +193,6 @@ def parse_installed_packages(s):
     pkgs = odict([p.split(' ') for p in pkgs])
     return pkgs
         
-installed_pkgs = parse_installed_packages(check_output(['pacman', '-Q'], universal_newlines=True))
-installed_native_pkgs = parse_installed_packages(check_output(['pacman', '-Qn'], universal_newlines=True))
-
 def get_owned_files(installed_pkgs):
     fs = check_output(PACMAN_FILE_LIST_CMD, universal_newlines=True).split('\n')
     r = odict()
@@ -214,20 +210,12 @@ def get_owned_files(installed_pkgs):
     return r
 
 
-#prepare pacman db
-if PACMAN_DB_PATH.exists():
-    shutil.rmtree(str(PACMAN_DB_PATH))
-mkdir_p(PACMAN_DB_PATH)
-#check_call('sudo pacman -Sy -b '.split() + [str(PACMAN_DB_PATH)])
-(PACMAN_DB_PATH / 'sync').symlink_to('/var/lib/pacman/sync')
-
-#get list of chroot pkg_owned_files
-noop_pacman = Path(pacman_base)
-noop_pacman.write_text('#!/usr/bin/env sh\necho $@')
-chmod('+x', noop_pacman)
-path = str(noop_pacman.parent.absolute()) + ':' + os.getenv('PATH')
-chroot_files = install_pkg(CHROOT_PATH / 'DUMMY', 'DUMMY', path, list_files)
-
+def prepare_pacman_db():
+    if PACMAN_DB_PATH.exists():
+        shutil.rmtree(str(PACMAN_DB_PATH))
+    mkdir_p(PACMAN_DB_PATH)
+    #check_call('sudo pacman -Sy -b '.split() + [str(PACMAN_DB_PATH)])
+    (PACMAN_DB_PATH / 'sync').symlink_to('/var/lib/pacman/sync')
 
 #patch pacman call so that it doesn't sync db /every/ time
 def nosync_pacman():
@@ -271,85 +259,7 @@ def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
     aur_path = str(aur_pacman.parent.absolute()) + ':' + os.getenv('PATH')
     return aur_path
 
-state = load_state()
-config_files = get_config_files()
-for i, (pkg, version) in enumerate(installed_pkgs.items()):
-    if pkg in pkg_blacklist:
-        continue
-
-    
-
-    def get_files(version):
-        msg = 'not found'
-        if pkg in state:
-            msg = 'version %s not found, only %s' % (version, ', '.join(state[pkg].keys()))
-        print('------------------(%s/%s): %s %s' % (i+1, len(installed_pkgs), pkg, msg))
-
-        chroot_path = CHROOT_PATH / pkg
-        is_aur = pkg not in installed_native_pkgs
-        if is_aur:
-            print('AUR package')
-            pkgbuild_path = temp_dir('aurbuild-%s' % pkg)
-            version_path = temp_dir('version-%s' % pkg)
-            _path = aur_pacman(pkg, str(chroot_path), pkgbuild_path, version_path)
-        else:
-            _path = nosync_pacman()
-
-        def job(_):
-            #print('Getting package pkg_owned_files...')
-            pkg_files = list_files(chroot_path)
-            pkg_files = filter(lambda p: p not in chroot_files, pkg_files)
-            pkg_files = list(pkg_files)
-            #print('\n'.join(list(map(str, (pkg_files)))))
-
-            #print(pkg_files[0], file_hash(str(CHROOT_PATH / pkg_files[0])))
-            hashes = [file_hash(str(chroot_path / p)) for p in pkg_files]
-            #print(hashes)
-
-            pkg_files = [Path('/') / p for p in pkg_files]
-            r = list(zip(map(str, pkg_files), hashes))
-            return r
-
-            
-        pkg_files = install_pkg(chroot_path, pkg, _path, job)
-        if is_aur:
-            version = Path(version_path).read_text()
-            version = version.split(' ', 1)[1].strip()
-            print('###### VERSION: %s' % version)
-            
-        pkg_files = odict(pkg_files)
-        #print('\n'.join(list(map(str, (pkg_files)))))
-        
-        state.setdefault(pkg, odict())
-        state[pkg][version] = pkg_files
-        save_state({pkg: state[pkg]})
-
-        return version
-    
-    def owned_check():
-        pkg_files = state[pkg][version]
-        if pkg in config_files and version in config_files[pkg]:
-            for changed, f in config_files[pkg][version]:
-                if not (f in map(str, pkg_files)):
-                    raise Exception('%s not in %s' % (f, pkg_files))
-        
-
-    if pkg in state and version in state[pkg]:
-        for f, h in state[pkg][version].items():
-            if not f.startswith('/'):
-                raise Exception('%s %s %s' % (pkg, version, f))
-        try:
-            owned_check()
-        except Exception as e:
-            print(e)
-            version = get_files(version)
-    else:
-
-        version = get_files(version)
-        owned_check()
-        
-
-def search_filepath_state(p):
+def search_filepath_state(p, state):
     for pkg, version in installed_pkgs.items():
         if not pkg in state or version not in state[pkg]:
             continue
@@ -367,78 +277,6 @@ def search_filepath(p, pkgs):
                 return (pkg, version)
     return None
     
-modified_config_files = odict()
-unmodified_config_files = odict()
-for pkg, vs in config_files.items():
-    modified_config_files[pkg] = odict()
-    unmodified_config_files[pkg] = odict()
-    for version, fs in vs.items():
-        modified_config_files[pkg][version] = [f for f in fs if f[0] == MODIFIED]
-        unmodified_config_files[pkg][version] = [f for f in fs if f[0] == UNMODIFIED]
-
-owned_files = get_owned_files(installed_pkgs)
-
-orphan_files = []
-modified_files = odict()
-uncheckable_files = []
-for d in checked_paths:
-    if Path(d).is_file():
-        files = [Path(d)]
-    else:
-        files = d.glob('**/*')
-
-    for p in files:
-        skip = False
-        presolved = p.resolve()
-        for ip in ignored_paths:
-            if str(p).startswith(ip) or str(presolved).startswith(ip):
-                skip = True
-                break
-        if skip:
-            continue
-
-        p = presolved
-        if not p.is_file():
-            continue
-        s = str(p)
-
-        pkg = None
-        version = None
-        r = search_filepath_state(s)
-        if r is not None:
-            pkg, version = r
-            phash = state[pkg][version][s]
-            try:
-                hash = file_hash(p)
-            except PermissionError:
-                txt = check_output(['sudo', 'cat', str(p)])
-                hash = get_hash(txt)
-            if hash == phash:
-                continue
-        else:
-            r = search_filepath(s, config_files)
-            if r:
-                pkg, version = r
-                if search_filepath(s, unmodified_config_files):
-                    assert(search_filepath(s, modified_config_files))
-                    continue
-
-            r = search_filepath(s, owned_files)
-            if r:
-                pkg, version = r
-                uncheckable_files.append((s, r))
-                continue
-            orphan_files.append(s)
-            continue
-
-        modified_files.setdefault(pkg, [])
-        modified_files[pkg].append(s)
-
-modified_files = odict(sorted([fs for fs in modified_files.items()], key=lambda fs: fs[0]))
-
-
-
-            
 def get_orphan_pkgs():
     if ORPHAN_PKGS_FILE.exists():
         with ORPHAN_PKGS_FILE.open('r') as f:
@@ -459,39 +297,15 @@ def get_orphan_pkgs():
         r[f] = pkg
     return r
 
+def split_lines(s):
+    ls = [s.strip() for s in s.split('\n')]
+    ls = [l for l in ls if l]
+    return ls
 
-orphan_pkg_associations = get_orphan_pkgs()
+def git_split_lines(s):
+    r = split_lines(s)
+    return [s[2:] if s.startswith('* ') else s for s in r]
 
-ignored_orphan_files = []
-r = odict()
-for p in orphan_files:
-    if p not in orphan_pkg_associations:
-        ignored_orphan_files.append(p)
-        continue
-    pkg = orphan_pkg_associations[p]
-    r.setdefault(pkg, [])
-    r[pkg].append(p)
-orphan_files = r
-
-def print_paths(l):
-    print('\n'.join(map(str, l)))
-    
-#print('### modified')
-#print_paths(modified_files)
-print('### ignored orphans')
-print_paths(ignored_orphan_files)
-print('### uncheckable')
-print_paths(uncheckable_files)
-
-#print
-for pkg, fs in modified_files.items():
-    print(pkg, installed_pkgs[pkg])
-    print('\t%s' % (' '.join(fs)))
-
-TAG_SEP = '#'
-BASE_BRANCH_NAME = 'base'
-BASE_TAG_NAME = '0'
-MACHINE_SEP = '!'
 
 class hg:
     class HgException(Exception):
@@ -499,7 +313,7 @@ class hg:
     
     def __init__(self, repo_path):
         self.repo_path = repo_path
-        
+
     def __getattr__(self, name):
         def f(*args, **kwargs):
             args = [str(a) for a in args]
@@ -538,45 +352,29 @@ class hg:
         if split_lines(self.merge(branch, P=True)):
             self.merge(branch)
             self.commit(m='mrg: %s into %s' % (branch, cur))
-        
-def split_lines(s):
-    ls = [s.strip() for s in s.split('\n')]
-    ls = [l for l in ls if l]
-    return ls
 
-def git_split_lines(s):
-    r = split_lines(s)
-    return [s[2:] if s.startswith('* ') else s for s in r]
+    def has_branch(self, branch):
+        return branch in split_lines(self.branches(q=True))
 
+    def initialize(self):
+        repo_path = Path(self.repo_path)
+        if not repo_path.exists():
+            repo_path.mkdir()
+        if not (repo_path / '.hg').exists():
+            self.init()
 
-def repo_has_branch(branch):
-    return branch in split_lines(repo.branches(q=True))
+    def commit_and_tag(self, files, msg, tag):
+        self.add(*files)
 
+        if self.diff():
+            self.commit(*files, m=msg)
 
-def init_repo(repo_path):
-    repo = hg(str(repo_path))
-    if not repo_path.exists():
-        repo_path.mkdir()
-    if not (repo_path / '.hg').exists():
-        repo.init()
-    return repo
+            #reassign tag
+            self.tag(tag, local=True, force=True)
 
-repo = init_repo(repo_path)
-if not repo_has_branch('default'):
-    repo.branch('default')
-    repo.empty_commit('initial')
-
-
-
-def commit_and_tag(files, msg, tag):
-    repo.add(*files)
     
-    if repo.diff():
-        repo.commit(*files, m=msg)
-
-        #reassign tag
-        repo.tag(tag, local=True, force=True)
-
+            
+        
 
 def get_file_org(pkg, version, files, outdir):
     chroot_path = CHROOT_PATH / 'org' / pkg
@@ -634,12 +432,6 @@ class ListComp:
         return False
                 
 
-def repo_has_branch(branch):
-    return branch in split_lines(repo.branches(q=True))
-
-branches = split_lines(repo.branches(q=True))
-print(branches)
-
 def tag_escape(tag):
     return tag.replace(':', '_')
 
@@ -658,33 +450,11 @@ def machine_branch(pkg):
 def machine_branch_main():
     return MACHINE_SEP + machine
 
-tags = split_lines(repo.tags(q=True))
-#hg
-tags = [t for t in tags if t != 'tip']
-print(tags)
-pkg_committed_versions = odict()
-for tag in tags:
-    pkg, version = tag_split(tag)
-    pkg_committed_versions.setdefault(pkg, [])
-    pkg_committed_versions[pkg].append(version)
-pkg_committed_versions = odict([(pkg, list(sorted(versions, key=lambda v: ListComp(natural_comp(v)))))
-                                for pkg, versions in pkg_committed_versions.items()])
-print(pkg_committed_versions)
-
-#machine main branch
-#branch = machine_branch_main()
-#if branch not in branches:
-#    #raise Exception('please create a branch named !%s with an initial commit' % (machine))
-#    repo.update('default', clean=True)
-#    repo.branch(branch)
-#    repo.empty_commit('initial')
-
-
 def git_repo_files():
     r = getattr(git, 'ls-tree')(r='HEAD', **{'name-only': True, 'full-tree': True})
     return git_split_lines(r)
 
-def hg_repo_files():
+def hg_repo_files(repo):
     r = repo.status(A=True)
     ls = split_lines(r)
     ls = [l.split(' ', 1)[1] for l in ls if not l.startswith('?')]
@@ -693,118 +463,358 @@ def hg_repo_files():
 repo_files = hg_repo_files
 
 
-def repo_differs(fs, integrity_check=False):
-    #check if all files are present
-    differs = False
-    for f in fs:
-        fp = Path(f)
-        assert(fp.is_absolute())
-        p = repo_path / fp.relative_to('/')
-        if not p.exists() or (integrity_check and file_hash(str(p)) != file_hash(f)):
-            differs = True
-            print('%s differs from %s' % (p, f))
+class PkgRepo(hg):
+    def files_differ(self, fs, integrity_check=False):
+        #check if all files are present
+        differs = False
+        for f in fs:
+            fp = Path(f)
+            assert(fp.is_absolute())
+            p = repo_path / fp.relative_to('/')
+            if not p.exists() or (integrity_check and file_hash(str(p)) != file_hash(f)):
+                differs = True
+                print('%s differs from %s' % (p, f))
 
-    #check if files were removed
-    for p in repo_files():
-        p = Path(p)
-        if not p.is_file() or is_repo(p):
+        #check if files were removed
+        for p in repo_files(self):
+            p = Path(p)
+            if not p.is_file() or is_repo(p):
+                continue
+            f = Path('/') / p.relative_to(repo_path)
+            if not f.exists():
+                differs = True
+                print('%s differs from %s' % (p, f))
+        return differs
+
+
+installed_pkgs = parse_installed_packages(check_output(['pacman', '-Q'], universal_newlines=True))
+installed_native_pkgs = parse_installed_packages(check_output(['pacman', '-Qn'], universal_newlines=True))
+
+def main():
+
+    p = argparse.ArgumentParser(description='check archlinux (config) files for changes')
+    p.add_argument('paths', nargs='+')
+    args = p.parse_args()
+
+    checked_paths = [Path(a) for a in args.paths]
+
+
+
+
+    prepare_pacman_db()
+
+    #get list of chroot pkg_owned_files
+    noop_pacman = Path(pacman_base)
+    noop_pacman.write_text('#!/usr/bin/env sh\necho $@')
+    chmod('+x', noop_pacman)
+    path = str(noop_pacman.parent.absolute()) + ':' + os.getenv('PATH')
+    chroot_files = install_pkg(CHROOT_PATH / 'DUMMY', 'DUMMY', path, list_files)
+
+
+    state = load_state()
+    config_files = get_config_files()
+    for i, (pkg, version) in enumerate(installed_pkgs.items()):
+        if pkg in pkg_blacklist:
             continue
-        f = Path('/') / p.relative_to(repo_path)
-        if not f.exists():
-            differs = True
-            print('%s differs from %s' % (p, f))
-    return differs
 
 
-pkgs = sorted(list(modified_files.keys()) + list(orphan_files.keys()))
-pkgs_unique = []
-for p in pkgs:
-    if p in pkgs_unique:
-        continue
-    pkgs_unique.append(p)
-pkgs = pkgs_unique
 
-machine_branches = []
-print(pkgs)
-for pkg in pkgs:
-    version = installed_pkgs[pkg]
-    print('----------%s %s----------' % (pkg, version))
+        def get_files(version):
+            msg = 'not found'
+            if pkg in state:
+                msg = 'version %s not found, only %s' % (version, ', '.join(state[pkg].keys()))
+            print('------------------(%s/%s): %s %s' % (i+1, len(installed_pkgs), pkg, msg))
 
-    #can only update last version
-    tag_version = tag_escape(version)
-    if pkg in pkg_committed_versions and ListComp(natural_comp(tag_version)) < ListComp(natural_comp(pkg_committed_versions[pkg][-1])):
-        print('ERROR: history rewriting (i.e. downgrading) not supported %s %s %s' % (pkg, tag_version, pkg_committed_versions[pkg]))
-        print(versions)
-        print(natural_comp(tag_version), *[natural_comp(v) for v in pkg_committed_versions[pkg]])
-        continue
-    
-    #create pkg branch from master branch
-    if repo_has_branch(pkg):
-        repo.update(pkg, clean=True)
-    else:
-        repo.update('default', clean=True)
-        repo.branch(pkg)
+            chroot_path = CHROOT_PATH / pkg
+            is_aur = pkg not in installed_native_pkgs
+            if is_aur:
+                print('AUR package')
+                pkgbuild_path = temp_dir('aurbuild-%s' % pkg)
+                version_path = temp_dir('version-%s' % pkg)
+                _path = aur_pacman(pkg, str(chroot_path), pkgbuild_path, version_path)
+            else:
+                _path = nosync_pacman()
 
-    #create org branch
-    tag = tag_name(pkg, version)
-    fs = modified_files.get(pkg, [])
-    for s in fs:
-        assert(not str(s) in orphan_files)
-    print('with files: %s' % ' '.join(fs))
+            def job(_):
+                #print('Getting package pkg_owned_files...')
+                pkg_files = list_files(chroot_path)
+                pkg_files = filter(lambda p: p not in chroot_files, pkg_files)
+                pkg_files = list(pkg_files)
+                #print('\n'.join(list(map(str, (pkg_files)))))
 
-    if repo_differs(fs):
-        fs = get_file_org(pkg, version, fs, repo_path)
-        fs = list(map(str, fs))
-        msg = '%s %s' % (pkg, version)
-        commit_and_tag(fs, msg, tag)
-            
-    def repo_machine_branch(version, fs):
-        #machine branches
-        branch = machine_branch(pkg)
+                #print(pkg_files[0], file_hash(str(CHROOT_PATH / pkg_files[0])))
+                hashes = [file_hash(str(chroot_path / p)) for p in pkg_files]
+                #print(hashes)
 
-        if branch in pkg_committed_versions and ListComp(natural_comp(tag_escape(version))) < ListComp(natural_comp(pkg_committed_versions[branch][-1])):
-            print('ERROR: history rewriting not supported %s %s %s' % (branch, tag_version, pkg_committed_versions[branch]))
-            return
+                pkg_files = [Path('/') / p for p in pkg_files]
+                r = list(zip(map(str, pkg_files), hashes))
+                return r
 
-        has_pkg_branch = repo_has_branch(pkg)
-        
-        if repo_has_branch(branch):
-            repo.update(branch, clean=True)
-            if has_pkg_branch:
-                repo.commit_merge(pkg)
+
+            pkg_files = install_pkg(chroot_path, pkg, _path, job)
+            if is_aur:
+                version = Path(version_path).read_text()
+                version = version.split(' ', 1)[1].strip()
+                print('###### VERSION: %s' % version)
+
+            pkg_files = odict(pkg_files)
+            #print('\n'.join(list(map(str, (pkg_files)))))
+
+            state.setdefault(pkg, odict())
+            state[pkg][version] = pkg_files
+            save_state({pkg: state[pkg]})
+
+            return version
+
+        def owned_check():
+            pkg_files = state[pkg][version]
+            if pkg in config_files and version in config_files[pkg]:
+                for changed, f in config_files[pkg][version]:
+                    if not (f in map(str, pkg_files)):
+                        raise Exception('%s not in %s' % (f, pkg_files))
+
+
+        if pkg in state and version in state[pkg]:
+            for f, h in state[pkg][version].items():
+                if not f.startswith('/'):
+                    raise Exception('%s %s %s' % (pkg, version, f))
+            try:
+                owned_check()
+            except Exception as e:
+                print(e)
+                version = get_files(version)
         else:
-            base = pkg if has_pkg_branch else 'default'
-            repo.update(base, clean=True)
-            repo.branch(branch)
-            
 
-        
-        gfs = []
+            version = get_files(version)
+            owned_check()
+
+
+    modified_config_files = odict()
+    unmodified_config_files = odict()
+    for pkg, vs in config_files.items():
+        modified_config_files[pkg] = odict()
+        unmodified_config_files[pkg] = odict()
+        for version, fs in vs.items():
+            modified_config_files[pkg][version] = [f for f in fs if f[0] == MODIFIED]
+            unmodified_config_files[pkg][version] = [f for f in fs if f[0] == UNMODIFIED]
+
+    owned_files = get_owned_files(installed_pkgs)
+
+    orphan_files = []
+    modified_files = odict()
+    uncheckable_files = []
+    for d in checked_paths:
+        if Path(d).is_file():
+            files = [Path(d)]
+        else:
+            files = d.glob('**/*')
+
+        for p in files:
+            skip = False
+            presolved = p.resolve()
+            for ip in ignored_paths:
+                if str(p).startswith(ip) or str(presolved).startswith(ip):
+                    skip = True
+                    break
+            if skip:
+                continue
+
+            p = presolved
+            if not p.is_file():
+                continue
+            s = str(p)
+
+            pkg = None
+            version = None
+            r = search_filepath_state(s, state)
+            if r is not None:
+                pkg, version = r
+                phash = state[pkg][version][s]
+                try:
+                    hash = file_hash(p)
+                except PermissionError:
+                    txt = check_output(['sudo', 'cat', str(p)])
+                    hash = get_hash(txt)
+                if hash == phash:
+                    continue
+            else:
+                r = search_filepath(s, config_files)
+                if r:
+                    pkg, version = r
+                    if search_filepath(s, unmodified_config_files):
+                        assert(search_filepath(s, modified_config_files))
+                        continue
+
+                r = search_filepath(s, owned_files)
+                if r:
+                    pkg, version = r
+                    uncheckable_files.append((s, r))
+                    continue
+                orphan_files.append(s)
+                continue
+
+            modified_files.setdefault(pkg, [])
+            modified_files[pkg].append(s)
+
+    modified_files = odict(sorted([fs for fs in modified_files.items()], key=lambda fs: fs[0]))
+
+
+
+
+
+    orphan_pkg_associations = get_orphan_pkgs()
+
+    ignored_orphan_files = []
+    r = odict()
+    for p in orphan_files:
+        if p not in orphan_pkg_associations:
+            ignored_orphan_files.append(p)
+            continue
+        pkg = orphan_pkg_associations[p]
+        r.setdefault(pkg, [])
+        r[pkg].append(p)
+    orphan_files = r
+
+    def print_paths(l):
+        print('\n'.join(map(str, l)))
+
+    #print('### modified')
+    #print_paths(modified_files)
+    print('### ignored orphans')
+    print_paths(ignored_orphan_files)
+    print('### uncheckable')
+    print_paths(uncheckable_files)
+
+    #print
+    for pkg, fs in modified_files.items():
+        print(pkg, installed_pkgs[pkg])
+        print('\t%s' % (' '.join(fs)))
+
+    repo = PkgRepo(str(repo_path))
+    repo.initialize()
+    if not repo.has_branch('default'):
+        repo.branch('default')
+        repo.empty_commit('initial')
+
+
+
+    branches = split_lines(repo.branches(q=True))
+    print(branches)
+
+    tags = split_lines(repo.tags(q=True))
+    #hg
+    tags = [t for t in tags if t != 'tip']
+    print(tags)
+    pkg_committed_versions = odict()
+    for tag in tags:
+        pkg, version = tag_split(tag)
+        pkg_committed_versions.setdefault(pkg, [])
+        pkg_committed_versions[pkg].append(version)
+    pkg_committed_versions = odict([(pkg, list(sorted(versions, key=lambda v: ListComp(natural_comp(v)))))
+                                    for pkg, versions in pkg_committed_versions.items()])
+    print(pkg_committed_versions)
+
+    #machine main branch
+    #branch = machine_branch_main()
+    #if branch not in branches:
+    #    #raise Exception('please create a branch named !%s with an initial commit' % (machine))
+    #    repo.update('default', clean=True)
+    #    repo.branch(branch)
+    #    repo.empty_commit('initial')
+
+
+    pkgs = sorted(list(modified_files.keys()) + list(orphan_files.keys()))
+    pkgs_unique = []
+    for p in pkgs:
+        if p in pkgs_unique:
+            continue
+        pkgs_unique.append(p)
+    pkgs = pkgs_unique
+
+    machine_branches = []
+    print(pkgs)
+    for pkg in pkgs:
+        version = installed_pkgs[pkg]
+        print('----------%s %s----------' % (pkg, version))
+
+        #can only update last version
+        tag_version = tag_escape(version)
+        if pkg in pkg_committed_versions and ListComp(natural_comp(tag_version)) < ListComp(natural_comp(pkg_committed_versions[pkg][-1])):
+            print('ERROR: history rewriting (i.e. downgrading) not supported %s %s %s' % (pkg, tag_version, pkg_committed_versions[pkg]))
+            print(versions)
+            print(natural_comp(tag_version), *[natural_comp(v) for v in pkg_committed_versions[pkg]])
+            continue
+
+        #create pkg branch from master branch
+        if repo.has_branch(pkg):
+            repo.update(pkg, clean=True)
+        else:
+            repo.update('default', clean=True)
+            repo.branch(pkg)
+
+        #create org branch
+        tag = tag_name(pkg, version)
+        fs = modified_files.get(pkg, [])
         for s in fs:
-            src = Path(s)
-            dst = repo_path / src.relative_to('/')
-            mkdir_p(dst.parent)
-            check_output(['sudo', 'cp', '-a', str(src), str(dst)])
-            gfs.append(str(dst))
+            assert(not str(s) in orphan_files)
+        print('with files: %s' % ' '.join(fs))
+
+        if repo.files_differ(fs):
+            fs = get_file_org(pkg, version, fs, repo_path)
+            fs = list(map(str, fs))
+            msg = '%s %s' % (pkg, version)
+            repo.commit_and_tag(fs, msg, tag)
+
+        def repo_machine_branch(version, fs):
+            #machine branches
+            branch = machine_branch(pkg)
+
+            if branch in pkg_committed_versions and ListComp(natural_comp(tag_escape(version))) < ListComp(natural_comp(pkg_committed_versions[branch][-1])):
+                print('ERROR: history rewriting not supported %s %s %s' % (branch, tag_version, pkg_committed_versions[branch]))
+                return
+
+            has_pkg_branch = repo.has_branch(pkg)
+
+            if repo.has_branch(branch):
+                repo.update(branch, clean=True)
+                if has_pkg_branch:
+                    repo.commit_merge(pkg)
+            else:
+                base = pkg if has_pkg_branch else 'default'
+                repo.update(base, clean=True)
+                repo.branch(branch)
 
 
-        tag = tag_name(branch, version)
-        msg = '%s %s' % (pkg, version)
-        commit_and_tag(gfs, msg, tag)
+
+            gfs = []
+            for s in fs:
+                src = Path(s)
+                dst = repo_path / src.relative_to('/')
+                mkdir_p(dst.parent)
+                check_output(['sudo', 'cp', '-a', str(src), str(dst)])
+                gfs.append(str(dst))
 
 
-    fs = []
-    fs += modified_files.get(pkg, [])
-    fs += orphan_files.get(pkg, [])
-    repo_machine_branch(version, fs)
-        
+            tag = tag_name(branch, version)
+            msg = '%s %s' % (pkg, version)
+            repo.commit_and_tag(gfs, msg, tag)
 
 
-machine_repo = init_repo(machine_repo_path)
-machine_repo.pull(repo_path)
-machine_repo.update('default')
-for pkg in pkgs:
-    #machine master branch
-    #machine_repo.update(machine_branch_main(), clean=True)
-    machine_repo.commit_merge(machine_branch(pkg))
+        fs = []
+        fs += modified_files.get(pkg, [])
+        fs += orphan_files.get(pkg, [])
+        repo_machine_branch(version, fs)
 
+
+
+    machine_repo = hg(str(machine_repo_path))
+    machine_repo.initialize()
+    
+    machine_repo.pull(repo_path)
+    machine_repo.update('default')
+    for pkg in pkgs:
+        #machine master branch
+        #machine_repo.update(machine_branch_main(), clean=True)
+        machine_repo.commit_merge(machine_branch(pkg))
+
+main()
