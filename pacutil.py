@@ -75,13 +75,21 @@ def get_hash(s):
     h.update(s)
     return h.hexdigest()
 
+def handle_filepath(p):
+    vars = dict(HOSTNAME=str(socket.gethostname()), HOME=str(Path.home()))
+    p = p.strip()
+    for k, v in vars.items():
+        p = p.replace('$%s' % k, v)
+    return p
+
+
 BASE_DIR = Path(__file__).parent
 
 machine = socket.gethostname()
 
-repo_path = Path(config.repo_path.strip()).absolute()
-machine_repo_path = Path(config.machine_repo_path.strip().replace('$HOSTNAME', machine)).absolute()
-backup_repo_path = Path(config.backup_repo_path.strip().replace('$HOSTNAME', machine)).absolute()
+repo_path = Path(handle_filepath(config.repo_path)).absolute()
+machine_repo_path = Path(handle_filepath(config.machine_repo_path)).absolute()
+backup_repo_path = Path(handle_filepath(config.backup_repo_path)).absolute()
 
 ORPHAN_PKGS_FILE = BASE_DIR / '.orphans'
 

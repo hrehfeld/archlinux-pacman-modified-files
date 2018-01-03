@@ -1,3 +1,3 @@
-repo_path = '/home/hrehfeld/etc-repo-hg'
-machine_repo_path = '/home/hrehfeld/etc-$HOSTNAME'
-backup_repo_path = '/home/hrehfeld/etc-$HOSTNAME-backup'
+repo_path = '$HOME/etc-repo-hg'
+machine_repo_path = '$HOME/etc-$HOSTNAME'
+backup_repo_path = '$HOME/etc-$HOSTNAME-backup'
