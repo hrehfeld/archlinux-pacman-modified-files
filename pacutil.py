@@ -31,8 +31,9 @@ TAG_SEP = '#'
 BASE_BRANCH_NAME = 'base'
 BASE_TAG_NAME = '0'
 MACHINE_SEP = '!'
+FEATURE_SEP = '>'
 
-
+DEFAULT_BRANCH = 'default'
 
 
 def temp_dir(prefix):
@@ -51,8 +52,15 @@ def check_output(cmd, *args, **kwargs):
     return sp_output(cmd, *args, **kwargs)
 
 def check_call(cmd, *args, **kwargs):
-    #print(' '.join(cmd))
+    print(' '.join(cmd))
     return sp_call(cmd, *args, **kwargs)
+
+def copy_archive(fa, fb, sudo=False):
+    cmd = ['cp', '-a', str(fa), str(fb)]
+    if sudo:
+        cmd = ['sudo'] + cmd
+    return check_call(cmd)
+    
 
 def file_hash(filename):
     h = hashlib.sha256()
@@ -73,6 +81,7 @@ machine = socket.gethostname()
 
 repo_path = Path(config.repo_path.strip()).absolute()
 machine_repo_path = Path(config.machine_repo_path.strip().replace('$HOSTNAME', machine)).absolute()
+backup_repo_path = Path(config.backup_repo_path.strip().replace('$HOSTNAME', machine)).absolute()
 
 ORPHAN_PKGS_FILE = BASE_DIR / '.orphans'
 
@@ -347,8 +356,9 @@ class hg:
         self.rm(t)
         self.commit(m=msg, amend=True)
 
-    def commit_merge(self, branch):
-        cur = self.branch().strip()
+    def commit_merge(self, branch, cur=None):
+        if not cur:
+            cur = self.branch().strip()
         if split_lines(self.merge(branch, P=True)):
             self.merge(branch)
             self.commit(m='mrg: %s into %s' % (branch, cur))
@@ -372,9 +382,21 @@ class hg:
             #reassign tag
             self.tag(tag, local=True, force=True)
 
-    
-            
-        
+
+    def ensure_branch(self, name, from_branch=None, commit=True, clean=False):
+        if not self.has_branch(name):
+            if from_branch:
+                self.update(from_branch, clean=clean)
+            elif clean:
+                self.update(clean=True)
+            self.branch(name)
+            if commit:
+                self.empty_commit('initial')
+            return True
+        else:
+            self.update(name, clean=clean)
+            return False
+
 
 def get_file_org(pkg, version, files, outdir):
     chroot_path = CHROOT_PATH / 'org' / pkg
@@ -490,11 +512,7 @@ class PkgRepo(hg):
 installed_pkgs = parse_installed_packages(check_output(['pacman', '-Q'], universal_newlines=True))
 installed_native_pkgs = parse_installed_packages(check_output(['pacman', '-Qn'], universal_newlines=True))
 
-def main():
-
-    p = argparse.ArgumentParser(description='check archlinux (config) files for changes')
-    p.add_argument('paths', nargs='+')
-    args = p.parse_args()
+def main(args):
 
     checked_paths = [Path(a) for a in args.paths]
 
@@ -692,10 +710,7 @@ def main():
 
     repo = PkgRepo(str(repo_path))
     repo.initialize()
-    if not repo.has_branch('default'):
-        repo.branch('default')
-        repo.empty_commit('initial')
-
+    repo.ensure_branch(DEFAULT_BRANCH)
 
 
     branches = split_lines(repo.branches(q=True))
@@ -718,7 +733,7 @@ def main():
     #branch = machine_branch_main()
     #if branch not in branches:
     #    #raise Exception('please create a branch named !%s with an initial commit' % (machine))
-    #    repo.update('default', clean=True)
+    #    repo.update(DEFAULT_BRANCH, clean=True)
     #    repo.branch(branch)
     #    repo.empty_commit('initial')
 
@@ -746,11 +761,7 @@ def main():
             continue
 
         #create pkg branch from master branch
-        if repo.has_branch(pkg):
-            repo.update(pkg, clean=True)
-        else:
-            repo.update('default', clean=True)
-            repo.branch(pkg)
+        repo.ensure_branch(pkg, from_branch=DEFAULT_BRANCH, commit=False, clean=True)
 
         #create org branch
         tag = tag_name(pkg, version)
@@ -762,7 +773,7 @@ def main():
         if repo.files_differ(fs):
             fs = get_file_org(pkg, version, fs, repo_path)
             fs = list(map(str, fs))
-            msg = '%s %s' % (pkg, version)
+            msg = tag_name(pkg, version)
             repo.commit_and_tag(fs, msg, tag)
 
         def repo_machine_branch(version, fs):
@@ -775,16 +786,10 @@ def main():
 
             has_pkg_branch = repo.has_branch(pkg)
 
-            if repo.has_branch(branch):
-                repo.update(branch, clean=True)
-                if has_pkg_branch:
-                    repo.commit_merge(pkg)
-            else:
-                base = pkg if has_pkg_branch else 'default'
-                repo.update(base, clean=True)
-                repo.branch(branch)
-
-
+            base = pkg if has_pkg_branch else DEFAULT_BRANCH
+            repo.ensure_branch(branch, from_branch=base, clean=True, commit=False)
+            if has_pkg_branch:
+                repo.commit_merge(pkg)
 
             gfs = []
             for s in fs:
@@ -807,14 +812,92 @@ def main():
 
 
 
+
+def merge_features(args):
+    repo = PkgRepo(str(repo_path))
+    repo.initialize()
+
+    branches = args.branch
+    
+    for branch in branches:
+        pkg, feature_name = branch.split(FEATURE_SEP, 1)
+
+        base = pkg if repo.has_branch(pkg) else DEFAULT_BRANCH
+        machine_b = machine_branch(pkg)
+        repo.ensure_branch(machine_b, from_branch=base, commit=False, clean=True)
+        repo.commit_merge(branch, machine_b)
+        
+
+def merge_machine_branches(args):
+    repo = PkgRepo(str(repo_path))
+    repo.initialize()
+
+
     machine_repo = hg(str(machine_repo_path))
     machine_repo.initialize()
-    
-    machine_repo.pull(repo_path)
-    machine_repo.update('default')
-    for pkg in pkgs:
-        #machine master branch
-        #machine_repo.update(machine_branch_main(), clean=True)
-        machine_repo.commit_merge(machine_branch(pkg))
 
-main()
+    if machine_repo.has_branch(DEFAULT_BRANCH):
+        machine_repo.update(DEFAULT_BRANCH)
+
+    branches = split_lines(repo.branches(q=True))
+    print(branches)
+    for (pkg, version) in installed_pkgs.items():
+        branch = machine_branch(pkg)
+        if branch in branches:
+
+            machine_repo.pull(repo_path, branch=branch)
+            
+            #machine master branch
+            #machine_repo.update(machine_branch_main(), clean=True)
+            machine_repo.commit_merge(branch)
+
+def sync(args):
+    machine_repo = hg(str(machine_repo_path))
+    machine_repo.initialize()
+
+    backup_repo = hg(str(backup_repo_path))
+    backup_repo.initialize()
+
+    #git ls-tree -r "!$(hostname)" --name-only --full-name
+    files = split_lines(machine_repo.status(all=True, **{'no-status': True}))
+
+    print(files)
+
+
+    for f in files:
+        repo_file = machine_repo_path / f
+        fs_file = Path('/') / f
+        backup_file = backup_repo_path / f
+
+        print(repo_file, fs_file, backup_file)
+
+        if fs_file.exists():
+            mkdir_p(backup_file.parent)
+            copy_archive(fs_file, backup_file, sudo=True)
+
+        copy_archive(repo_file, fs_file, sudo=True)
+    backup_repo.add(*files)
+    backup_repo.commit(message='synced')
+        
+p = argparse.ArgumentParser(description='check archlinux files for changes')
+subp = p.add_subparsers()
+
+checkp = subp.add_parser('check')
+checkp.add_argument('paths', nargs='+')
+checkp.set_defaults(func=main)
+
+merge_machine_branchesp = subp.add_parser('merge-features')
+merge_machine_branchesp.add_argument('branch', nargs='+')
+merge_machine_branchesp.set_defaults(func=merge_features)
+
+merge_machine_branchesp = subp.add_parser('merge')
+merge_machine_branchesp.set_defaults(func=merge_machine_branches)
+
+syncp = subp.add_parser('sync')
+syncp.set_defaults(func=sync)
+
+args = p.parse_args()
+if not 'func' in args:
+    p.print_help()
+    exit(1)
+args.func(args)
