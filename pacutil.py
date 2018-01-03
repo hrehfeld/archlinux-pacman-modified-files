@@ -190,7 +190,7 @@ def load_state():
 def save_state(state):
     mkdir_p(STATE_PATH)
     for pkg in state:
-        state_str = json.dumps(state[pkg])
+        state_str = json.dumps(state[pkg], indent=2)
         pkgf = STATE_PATH / (pkg + '.json')
         with pkgf.open('w') as f:
             f.write(state_str)
