@@ -310,7 +310,6 @@ def get_orphan_pkgs():
         pkg, f = l
         if pkg.startswith(INTERNAL_PKG_MARKER):
             pkg = pkg.replace('$HOST', machine)
-            print(pkg)
         r[f] = pkg
     return r
 
@@ -848,7 +847,6 @@ def merge_machine_branches(args):
         machine_repo.update(DEFAULT_BRANCH)
 
     branches = split_lines(repo.branches(q=True))
-    print(branches)
     for (pkg, version) in installed_pkgs.items():
         branch = machine_branch(pkg)
         if branch in branches:
