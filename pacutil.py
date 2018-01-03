@@ -711,10 +711,6 @@ def main(args):
 
     #print('### modified')
     #print_paths(modified_files)
-    print('### ignored orphans')
-    print_paths(ignored_orphan_files)
-    print('### uncheckable')
-    print_paths(uncheckable_files)
 
     #print
     for pkg, fs in modified_files.items():
@@ -823,6 +819,11 @@ def main(args):
         fs += orphan_files.get(pkg, [])
         repo_machine_branch(version, fs)
 
+    print('''### These files are not associated with any package:
+    Add "<pkg> <filepath>" to %s to assign them to a package.''' % ORPHAN_PKGS_FILE)
+    print_paths(ignored_orphan_files)
+    print('### uncheckable')
+    print_paths(uncheckable_files)
 
 
 
