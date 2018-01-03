@@ -21,6 +21,8 @@ import argparse
 
 import config
 
+import getpass
+
 
 with Path('.pkg-blacklist').open('r') as f:
     pkg_blacklist = [p.strip() for p in f.read().split('\n')]
@@ -86,6 +88,7 @@ def handle_filepath(p):
 BASE_DIR = Path(__file__).parent
 
 machine = socket.gethostname()
+username = getpass.getuser()
 
 repo_path = Path(handle_filepath(config.repo_path)).absolute()
 machine_repo_path = Path(handle_filepath(config.machine_repo_path)).absolute()
