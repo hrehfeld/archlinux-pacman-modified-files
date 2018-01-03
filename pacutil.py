@@ -530,7 +530,9 @@ def main(args):
 
     #get list of chroot pkg_owned_files
     noop_pacman = Path(pacman_base)
-    noop_pacman.write_text('#!/usr/bin/env sh\necho $@')
+    noop_pacman.write_text('''#!/usr/bin/env sh
+    touch /var/log/pacman.log
+    echo $@''')
     chmod('+x', noop_pacman)
     path = str(noop_pacman.parent.absolute()) + ':' + os.getenv('PATH')
     chroot_files = install_pkg(CHROOT_PATH / 'DUMMY', 'DUMMY', path, list_files)
