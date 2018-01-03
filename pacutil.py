@@ -256,8 +256,17 @@ def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
     os.rmdir(version_path)
 
     aur_pacman = Path(tempfile.mkdtemp(prefix='pacman')) / Path(pacman_base)
+
+    # sudo -u $USERNAME -H git clone https://aur.archlinux.org/${PKG}.git $TEMPD
+
     cmd = r"""#!/usr/bin/env sh
     set -x
+    set -e
+    
+    _sudo() {
+    sudo -u $USERNAME -H $@
+    }
+
     PATH="%s"
     USERNAME="%s"
     PACMANDB="%s"
@@ -265,15 +274,18 @@ def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
     PKG="%s"
     CHROOT="%s"
     VERSION_PATH="%s"
-    sudo -u $USERNAME -H git clone https://aur.archlinux.org/${PKG}.git $TEMPD
+
+    _sudo mkdir -p $TEMPD
     cd $TEMPD
-    sudo -u $USERNAME -H makepkg -sr --asdeps --noconfirm
-    echo env PATH=$PATH /usr/bin/pacman -r $CHROOT -U --noconfirm --dbpath $PACMANDB -dd --nodeps ${TEMPD}/${PKG}*.pkg.tar.xz 
-    env PATH=$PATH /usr/bin/pacman -r $CHROOT -U --noconfirm --dbpath $PACMANDB -dd --nodeps ${TEMPD}/${PKG}*.pkg.tar.xz
-    VERSION=$(env PATH=$PATH /usr/bin/pacman -Q --dbpath $PACMANDB $PKG)
-    sudo -u $USERNAME -H sh -c "echo \"$VERSION\" > $VERSION_PATH"
-    cd ..
-    rm -rf $TEMPD
+    _sudo curl -q -L -O https://aur.archlinux.org/cgit/aur.git/snapshot/${PKG}.tar.gz
+    _sudo tar -xvf ${PKG}.tar.gz
+    _sudo rm ${PKG}.tar.gz
+    cd ${PKG}
+    _sudo makepkg -sr --asdeps --noconfirm
+    env PATH=$PATH /usr/bin/pacman -r $CHROOT -U --noconfirm --dbpath $PACMANDB -dd --nodeps ${TEMPD}/${PKG}/${PKG}*.pkg.tar.xz
+    _sudo env PATH=$PATH /usr/bin/pacman -Q --dbpath $PACMANDB $PKG > $VERSION_PATH
+    cd /
+    _sudo rm -rf $TEMPD
     """ % (os.getenv('PATH'), username, str(PACMAN_DB_PATH), pkgbuild_path, pkg, chroot, version_path)
     aur_pacman.write_text(cmd)
     chmod('+x', aur_pacman)
