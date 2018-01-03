@@ -3,7 +3,7 @@ from subprocess import check_output as sp_output, check_call as sp_call, DEVNULL
 import subprocess
 
 import json
-from extended_pathlib import Path
+from pathlib import Path
 
 from collections import OrderedDict as odict
 
