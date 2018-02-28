@@ -318,6 +318,7 @@ def get_orphan_pkgs():
             ls = f.read()
 
     ls = filter(len, ls.split('\n'))
+    ls = filter(lambda l: not l.startswith('#'), ls)
 
     r = odict()
     for line in ls:
