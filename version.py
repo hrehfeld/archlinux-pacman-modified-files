@@ -14,8 +14,6 @@ def earlier_version(a, b):
         a = split(a)
         b = split(b)
 
-        
-        print(a, b)
         va = v(a[0])
         vb = v(b[0])
         if va != vb:
