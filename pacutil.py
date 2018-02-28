@@ -851,7 +851,7 @@ def merge_features(args):
     repo.initialize()
 
     branches = args.branch
-    
+
     for branch in branches:
         pkg, feature_name = branch.split(FEATURE_SEP, 1)
 
@@ -859,12 +859,11 @@ def merge_features(args):
         machine_b = machine_branch(pkg)
         repo.ensure_branch(machine_b, from_branch=base, commit=False, clean=True)
         repo.commit_merge(branch, machine_b)
-        
+
 
 def merge_machine_branches(args):
     repo = PkgRepo(str(repo_path))
     repo.initialize()
-
 
     machine_repo = hg(str(machine_repo_path))
     machine_repo.initialize()
