@@ -23,6 +23,8 @@ import config
 
 import getpass
 
+from version import earlier_version
+
 
 with Path('.pkg-blacklist').open('r') as f:
     pkg_blacklist = [p.strip() for p in f.read().split('\n')]
@@ -775,8 +777,9 @@ def main(args):
 
         #can only update last version
         tag_version = tag_escape(version)
-        if pkg in pkg_committed_versions and ListComp(natural_comp(tag_version)) < ListComp(natural_comp(pkg_committed_versions[pkg][-1])):
-            print('ERROR: history rewriting (i.e. downgrading) not supported %s %s %s' % (pkg, tag_version, pkg_committed_versions[pkg]))
+        #if pkg in pkg_committed_versions and ListComp(natural_comp(tag_version)) < ListComp(natural_comp(pkg_committed_versions[pkg][-1])):
+        if pkg in pkg_committed_versions and earlier_version(tag_version, pkg_committed_versions[pkg][-1]):
+            print('ERROR: history rewriting (i.e. downgrading) not supported: %s %s < %s' % (pkg, tag_version, pkg_committed_versions[pkg][-1]))
             print(versions)
             print(natural_comp(tag_version), *[natural_comp(v) for v in pkg_committed_versions[pkg]])
             continue
@@ -801,9 +804,12 @@ def main(args):
             #machine branches
             branch = machine_branch(pkg)
 
-            if branch in pkg_committed_versions and ListComp(natural_comp(tag_escape(version))) < ListComp(natural_comp(pkg_committed_versions[branch][-1])):
-                print('ERROR: history rewriting not supported %s %s %s' % (branch, tag_version, pkg_committed_versions[branch]))
-                return
+            if branch in pkg_committed_versions:
+                cur = tag_escape(version)
+                last = pkg_committed_versions[branch][-1]
+                if earlier_version(cur, last):
+                    print('ERROR: history rewriting not supported %s %s < %s' % (branch, cur, last))
+                    return
 
             has_pkg_branch = repo.has_branch(pkg)
 
