@@ -538,6 +538,7 @@ class PkgRepo(hg):
 installed_pkgs = parse_installed_packages(check_output(['pacman', '-Q'], universal_newlines=True))
 installed_native_pkgs = parse_installed_packages(check_output(['pacman', '-Qn'], universal_newlines=True))
 
+
 def main(args):
 
     checked_paths = [Path(a) for a in args.paths]
