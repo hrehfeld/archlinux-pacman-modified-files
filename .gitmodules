@@ -1,3 +1,0 @@
-[submodule "state"]
-	path = state
-	url = https://github.com/hrehfeld/archlinux-pacman-modified-files-db
