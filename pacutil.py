@@ -917,11 +917,11 @@ checkp = subp.add_parser('check')
 checkp.add_argument('paths', nargs='+')
 checkp.set_defaults(func=main)
 
-merge_machine_branchesp = subp.add_parser('merge-features')
+merge_machine_branchesp = subp.add_parser('merge-features', description='''Merge feature branches $pkg>$feature-name into the corrensponding $pkg-$host branch for this machine.''')
 merge_machine_branchesp.add_argument('branch', nargs='+')
 merge_machine_branchesp.set_defaults(func=merge_features)
 
-merge_machine_branchesp = subp.add_parser('merge')
+merge_machine_branchesp = subp.add_parser('merge', description='''For every package installed on this system, merge the $pkg-$host branches from the main repo into the machine repo.''')
 merge_machine_branchesp.set_defaults(func=merge_machine_branches)
 
 syncp = subp.add_parser('sync')
