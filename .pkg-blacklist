@@ -4,7 +4,6 @@ nvidia-libgl-beta
 opencl-nvidia-beta
 nvidia-beta-all
 nvidia-utils-beta
-
 nextcloud-client
 rtags-git
 signal-muon-git
@@ -13,6 +12,7 @@ ttf-google-fonts-typewolf
 thrust
 unigine-superposition
 ttf-material-design-icons
+ttf-heuristica
 google-chrome
 discord
 discord-ptb
