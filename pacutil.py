@@ -141,6 +141,26 @@ MODIFIED = 0
 UNMODIFIED = 1
 PACMAN_CFG_FILE_LIST_CMD = ['pacman', '-Qii']
 
+
+def pacman_get_versions(chroot_path=None):
+    ls = check_output(PACMAN_CFG_FILE_LIST_CMD, universal_newlines=True, cwd=chroot_path).split('\n')
+    name_reg = re.compile(r'Name *: (.*)')
+    ver_reg = re.compile(r'Version *: (.*)')
+    name = None
+    ver = None
+    r = odict()
+    for l in ls:
+        m = name_reg.match(l)
+        if m:
+            name = m.group(1)
+        elif name:
+            m = ver_reg.match(l)
+            if m:
+                ver = m.group(1)
+                r[name] = ver
+    return r
+
+
 def get_config_files():
     ls = check_output(PACMAN_CFG_FILE_LIST_CMD, universal_newlines=True).split('\n')
     name_reg = re.compile(r'Name *: (.*)')
@@ -223,8 +243,13 @@ def install_pkg(chroot_path, pkg, job, path=None):
 
     r = job(chroot_path)
 
+    versions = pacman_get_versions(chroot_path)
+    version = None
+    if pkg in versions:
+        version = versions[pkg]
+
     shutil.rmtree(d)
-    return r
+    return version, r
 
 
 def load_state():
@@ -291,7 +316,7 @@ def install_pkg_aur(chroot_path, pkg, job):
     version_path = temp_dir('version-%s' % pkg)
     path = aur_pacman(pkg, str(chroot_path), pkgbuild_path, version_path)
 
-    pkg_files = install_pkg(chroot_path, pkg, job, path)
+    version, pkg_files = install_pkg(chroot_path, pkg, job, path)
 
     version = Path(version_path).read_text()
     version = version.split(' ', 1)[1].strip()
@@ -641,8 +666,7 @@ def main(args):
             print('[%s/%s]: %s %s' % (i + 1, len(installed_pkgs), colored(pkg, bcolors.BOLD), msg))
         requested_version = version
 
-        def owned_check():
-            pkg_files = state[pkg][version]
+        def owned_check(version, pkg_files):
             if pkg in config_files and version in config_files[pkg]:
                 for changed, f in config_files[pkg][version]:
                     if not (f in map(str, pkg_files)):
@@ -657,7 +681,7 @@ def main(args):
             install_f = install_pkg_aur
 
         def find_files(_):
-            return find_pkg_owned_files(chroot_path, chroot_default_files)
+            return odict(find_pkg_owned_files(chroot_path, chroot_default_files))
 
         pkg_files = None
         try:
@@ -666,7 +690,7 @@ def main(args):
                     if not f.startswith('/'):
                         raise Exception('%s %s %s' % (pkg, version, f))
                 try:
-                    owned_check()
+                    owned_check(version, state[pkg][version])
                 except Exception as e:
                     print(e)
                     print_progress('found')
@@ -677,13 +701,12 @@ def main(args):
                     msg = 'version %s not checked yet, only %s' % (version, ', '.join(state[pkg].keys()))
                 print_progress(msg)
                 version, pkg_files = install_f(chroot_path, pkg, find_files)
-                owned_check()
+                owned_check(version, pkg_files)
         except PacmanException as e:
             error('skipping %s: %s' % (pkg, str(e)))
             continue
 
         if pkg_files:
-            pkg_files = odict(pkg_files)
             #print('\n'.join(list(map(str, (pkg_files)))))
 
             state.setdefault(pkg, odict())
