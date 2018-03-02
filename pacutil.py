@@ -198,7 +198,14 @@ def list_files(chroot_path):
 class PacmanException(Exception):
     pass
 
-def install_pkg(chroot_path, pkg, path, job):
+
+def install_pkg(chroot_path, pkg, job, path=None):
+    if path is None:
+        path = nosync_pacman()
+
+    assert(isinstance(chroot_path, Path))
+    assert(isinstance(pkg, str))
+    assert(isinstance(path, str))
     #extract pkg
     mkdir_p(chroot_path)
     d = chroot_path / 'etc'
@@ -256,11 +263,39 @@ def get_owned_files(installed_pkgs):
         if len(l) != 2:
             raise Exception(line)
         pkg, f = l
+        # pkg was blacklisted
+        if pkg not in installed_pkgs:
+            continue
         ver = installed_pkgs[pkg]
         r.setdefault(pkg, odict())
         r[pkg].setdefault(ver, [])
         r[pkg][ver].append(f)
     return r
+
+
+def find_pkg_owned_files(chroot_path, chroot_default_files):
+    pkg_files = list_files(chroot_path)
+    pkg_files = filter(lambda p: p not in chroot_default_files, pkg_files)
+    pkg_files = list(pkg_files)
+    hashes = [file_hash(str(chroot_path / p)) for p in pkg_files]
+
+    pkg_files = [Path('/') / p for p in pkg_files]
+
+    return list(zip(map(str, pkg_files), hashes))
+
+
+def install_pkg_aur(chroot_path, pkg, job):
+    assert(isinstance(chroot_path, Path))
+    assert(isinstance(pkg, str))
+    pkgbuild_path = temp_dir('aurbuild-%s' % pkg)
+    version_path = temp_dir('version-%s' % pkg)
+    path = aur_pacman(pkg, str(chroot_path), pkgbuild_path, version_path)
+
+    pkg_files = install_pkg(chroot_path, pkg, job, path)
+
+    version = Path(version_path).read_text()
+    version = version.split(' ', 1)[1].strip()
+    return version, pkg_files
 
 
 def prepare_pacman_db():
@@ -325,9 +360,9 @@ def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
     aur_path = str(aur_pacman.parent.absolute()) + ':' + os.getenv('PATH')
     return aur_path
 
-def search_filepath_state(p, state):
-    for pkg, version in installed_pkgs.items():
-        if not pkg in state or version not in state[pkg]:
+def search_filepath_state(p, state, pkgs):
+    for pkg, version in pkgs.items():
+        if pkg not in state or version not in state[pkg]:
             continue
         pfiles = state[pkg][version]
         if p in pfiles:
@@ -397,7 +432,7 @@ class hg:
                     kws.append(str(v))
                     
             cmd = ['hg', name, *kws, *args]
-            print(' '.join(cmd))
+            print(self.repo_path + ': ' + ' '.join(cmd))
             try:
                 r = check_output(cmd, cwd=self.repo_path, universal_newlines=True, bufsize=16384 * 16)
             except subprocess.CalledProcessError as e:
@@ -566,12 +601,19 @@ class PkgRepo(hg):
         return differs
 
 
-installed_pkgs = parse_installed_packages(check_output(['pacman', '-Q'], universal_newlines=True))
-installed_native_pkgs = parse_installed_packages(check_output(['pacman', '-Qn'], universal_newlines=True))
+def get_installed_pkgs(native_only=False):
+    flags = '-Q'
+    if native_only:
+        flags += 'n'
+    return parse_installed_packages(check_output(['pacman', flags], universal_newlines=True))
 
+
+def filter_odict(d, keys):
+    for k in keys:
+        if k in d:
+            del d[k]
 
 def main(args):
-
     checked_paths = [Path(a) for a in args.paths]
 
     prepare_pacman_db()
@@ -583,63 +625,21 @@ def main(args):
     echo $@''')
     chmod('+x', noop_pacman)
     path = str(noop_pacman.parent.absolute()) + ':' + os.getenv('PATH')
-    chroot_files = install_pkg(CHROOT_PATH / 'DUMMY', 'DUMMY', path, list_files)
+    chroot_default_files = install_pkg(CHROOT_PATH / 'DUMMY', 'DUMMY', list_files, path)
 
+    installed_pkgs = get_installed_pkgs()
+    installed_native_pkgs = get_installed_pkgs(native_only=True)
+    filter_odict(installed_pkgs, pkg_blacklist)
+    filter_odict(installed_native_pkgs, pkg_blacklist)
+
+    pkgs_version_not_found = []
 
     state = load_state()
     config_files = get_config_files()
     for i, (pkg, version) in enumerate(installed_pkgs.items()):
-        if pkg in pkg_blacklist:
-            continue
-
-
-
-        def get_files(version):
-            msg = 'not found'
-            if pkg in state:
-                msg = 'version %s not found, only %s' % (version, ', '.join(state[pkg].keys()))
-            print('------------------(%s/%s): %s %s' % (i+1, len(installed_pkgs), pkg, msg))
-
-            chroot_path = CHROOT_PATH / pkg
-            is_aur = pkg not in installed_native_pkgs
-            if is_aur:
-                print('AUR package')
-                pkgbuild_path = temp_dir('aurbuild-%s' % pkg)
-                version_path = temp_dir('version-%s' % pkg)
-                _path = aur_pacman(pkg, str(chroot_path), pkgbuild_path, version_path)
-            else:
-                _path = nosync_pacman()
-
-            def job(_):
-                #print('Getting package pkg_owned_files...')
-                pkg_files = list_files(chroot_path)
-                pkg_files = filter(lambda p: p not in chroot_files, pkg_files)
-                pkg_files = list(pkg_files)
-                #print('\n'.join(list(map(str, (pkg_files)))))
-
-                #print(pkg_files[0], file_hash(str(CHROOT_PATH / pkg_files[0])))
-                hashes = [file_hash(str(chroot_path / p)) for p in pkg_files]
-                #print(hashes)
-
-                pkg_files = [Path('/') / p for p in pkg_files]
-                r = list(zip(map(str, pkg_files), hashes))
-                return r
-
-
-            pkg_files = install_pkg(chroot_path, pkg, _path, job)
-            if is_aur:
-                version = Path(version_path).read_text()
-                version = version.split(' ', 1)[1].strip()
-                print('###### VERSION: %s' % version)
-
-            pkg_files = odict(pkg_files)
-            #print('\n'.join(list(map(str, (pkg_files)))))
-
-            state.setdefault(pkg, odict())
-            state[pkg][version] = pkg_files
-            save_state({pkg: state[pkg]})
-
-            return version
+        def print_progress(msg):
+            print('[%s/%s]: %s %s' % (i + 1, len(installed_pkgs), colored(pkg, bcolors.BOLD), msg))
+        requested_version = version
 
         def owned_check():
             pkg_files = state[pkg][version]
@@ -649,6 +649,17 @@ def main(args):
                         raise Exception('%s not in %s' % (f, pkg_files))
 
 
+
+        chroot_path = CHROOT_PATH / pkg
+        is_aur = pkg not in installed_native_pkgs
+        install_f = install_pkg
+        if is_aur:
+            install_f = install_pkg_aur
+
+        def find_files(_):
+            return find_pkg_owned_files(chroot_path, chroot_default_files)
+
+        pkg_files = None
         try:
             if pkg in state and version in state[pkg]:
                 for f, h in state[pkg][version].items():
@@ -658,16 +669,31 @@ def main(args):
                     owned_check()
                 except Exception as e:
                     print(e)
-                    version = get_files(version)
+                    print_progress('found')
+                    version, pkg_files = install_f(chroot_path, pkg, find_files)
             else:
-
-                version = get_files(version)
+                msg = 'not checked yet'
+                if pkg in state:
+                    msg = 'version %s not checked yet, only %s' % (version, ', '.join(state[pkg].keys()))
+                print_progress(msg)
+                version, pkg_files = install_f(chroot_path, pkg, find_files)
                 owned_check()
         except PacmanException as e:
-            print(e)
-            error('skipping %s' % pkg)
+            error('skipping %s: %s' % (pkg, str(e)))
             continue
 
+        if pkg_files:
+            pkg_files = odict(pkg_files)
+            #print('\n'.join(list(map(str, (pkg_files)))))
+
+            state.setdefault(pkg, odict())
+            state[pkg][version] = pkg_files
+            save_state({pkg: state[pkg]})
+
+        if version != requested_version:
+            pkgs_version_not_found.append(pkg)
+
+    filter_odict(installed_pkgs, pkgs_version_not_found)
 
     modified_config_files = odict()
     unmodified_config_files = odict()
@@ -706,7 +732,7 @@ def main(args):
 
             pkg = None
             version = None
-            r = search_filepath_state(s, state)
+            r = search_filepath_state(s, state, installed_pkgs)
             if r is not None:
                 pkg, version = r
                 phash = state[pkg][version][s]
@@ -807,8 +833,11 @@ def main(args):
 
     machine_branches = []
     for pkg in pkgs:
+        # blacklisted or version not found
+        if pkg not in installed_pkgs:
+            continue
         version = installed_pkgs[pkg]
-        print('----------%s %s----------' % (pkg, version))
+        print(colored('%s %s' % (pkg, version), bcolors.BOLD))
 
         #can only update last version
         tag_version = tag_escape(version)
@@ -906,7 +935,7 @@ def merge_machine_branches(args):
         machine_repo.update(DEFAULT_BRANCH)
 
     branches = split_lines(repo.branches(q=True))
-    for (pkg, version) in installed_pkgs.items():
+    for (pkg, version) in get_installed_pkgs().items():
         branch = machine_branch(pkg)
         if branch in branches:
 
