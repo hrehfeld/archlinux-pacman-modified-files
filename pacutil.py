@@ -172,7 +172,8 @@ def get_config_files():
                 
             
 
-PACSTRAP_INSTALL_PKG = ['/usr/bin/pacstrap', '-c', '-G', '-M', '-d'] #+dir + installed_pkgs
+PACSTRAP_INSTALL_PKG = ['/usr/bin/pacstrap', '-c', '-G', '-M', '-d']
+
 
 def chmod(mode, path, sudo=False):
     cmd = ['chmod', '-R', mode, str(path)]
@@ -180,9 +181,11 @@ def chmod(mode, path, sudo=False):
         cmd = ['sudo'] + cmd
     return check_call(cmd, stdout=DEVNULL)
     
+
 def is_system_file(p):
     s = str(p)
     return s.startswith('proc') or s.startswith('sys')
+
 
 def list_files(chroot_path):
     pkg_files = chroot_path.glob('**/*')
@@ -210,7 +213,7 @@ def install_pkg(chroot_path, pkg, path, job):
 
     d = str(chroot_path.absolute())
     chmod('ugo=rwx', d, sudo=True)
-    
+
     r = job(chroot_path)
 
     shutil.rmtree(d)
@@ -234,7 +237,7 @@ def save_state(state):
         pkgf = STATE_PATH / (pkg + '.json')
         with pkgf.open('w') as f:
             f.write(state_str)
-    
+
 
 def parse_installed_packages(s):
     pkgs = s.split('\n')
@@ -242,6 +245,7 @@ def parse_installed_packages(s):
     pkgs = odict([p.split(' ') for p in pkgs])
     return pkgs
         
+
 def get_owned_files(installed_pkgs):
     fs = check_output(PACMAN_FILE_LIST_CMD, universal_newlines=True).split('\n')
     r = odict()
@@ -570,9 +574,6 @@ def main(args):
 
     checked_paths = [Path(a) for a in args.paths]
 
-
-
-
     prepare_pacman_db()
 
     #get list of chroot pkg_owned_files
@@ -796,6 +797,7 @@ def main(args):
 
 
     pkgs = sorted(list(modified_files.keys()) + list(orphan_files.keys()))
+    # unique pkgs only
     pkgs_unique = []
     for p in pkgs:
         if p in pkgs_unique:
@@ -804,7 +806,6 @@ def main(args):
     pkgs = pkgs_unique
 
     machine_branches = []
-    print(pkgs)
     for pkg in pkgs:
         version = installed_pkgs[pkg]
         print('----------%s %s----------' % (pkg, version))
