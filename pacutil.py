@@ -25,6 +25,28 @@ import getpass
 
 from version import earlier_version
 
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+
+def colored(s, c):
+    return ('%s%s%s' % (c, s, bcolors.ENDC))
+
+
+def warning(msg):
+    print(colored('WARNING:', bcolors.WARNING + bcolors.BOLD), colored(msg, bcolors.BOLD))
+
+
+def error(msg):
+    print(colored('ERROR:', bcolors.FAIL + bcolors.BOLD), colored(msg, bcolors.BOLD))
+
 
 with Path('.pkg-blacklist').open('r') as f:
     pkg_blacklist = [p.strip() for p in f.read().split('\n')]
@@ -170,6 +192,9 @@ def list_files(chroot_path):
     return pkg_files
 
 
+class PacmanException(Exception):
+    pass
+
 def install_pkg(chroot_path, pkg, path, job):
     #extract pkg
     mkdir_p(chroot_path)
@@ -178,8 +203,10 @@ def install_pkg(chroot_path, pkg, path, job):
     d = d / 'pacman.d'
     mkdir_p(d)
     pacstrap_cmd = ['sudo'] + PACSTRAP_INSTALL_PKG + [str(chroot_path), pkg]
-    check_call(['env', 'PATH=%s' % path] + pacstrap_cmd, stdout=DEVNULL
-    )
+    try:
+        check_call(['env', 'PATH=%s' % path] + pacstrap_cmd, stdout=DEVNULL)
+    except subprocess.CalledProcessError as e:
+        raise PacmanException(str(e))
 
     d = str(chroot_path.absolute())
     chmod('ugo=rwx', d, sudo=True)
@@ -621,19 +648,24 @@ def main(args):
                         raise Exception('%s not in %s' % (f, pkg_files))
 
 
-        if pkg in state and version in state[pkg]:
-            for f, h in state[pkg][version].items():
-                if not f.startswith('/'):
-                    raise Exception('%s %s %s' % (pkg, version, f))
-            try:
-                owned_check()
-            except Exception as e:
-                print(e)
-                version = get_files(version)
-        else:
+        try:
+            if pkg in state and version in state[pkg]:
+                for f, h in state[pkg][version].items():
+                    if not f.startswith('/'):
+                        raise Exception('%s %s %s' % (pkg, version, f))
+                try:
+                    owned_check()
+                except Exception as e:
+                    print(e)
+                    version = get_files(version)
+            else:
 
-            version = get_files(version)
-            owned_check()
+                version = get_files(version)
+                owned_check()
+        except PacmanException as e:
+            print(e)
+            error('skipping %s' % pkg)
+            continue
 
 
     modified_config_files = odict()
