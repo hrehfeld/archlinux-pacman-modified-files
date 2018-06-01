@@ -661,6 +661,11 @@ def filter_odict(d, keys):
             del d[k]
 
 def main(args):
+    if args.native_only:
+        if not args.pkg_check_only:
+            # TODO better message
+            raise Exception('native_only is only valid for package checking, not file checking')
+
     checked_paths = [Path(a) for a in args.paths]
 
     prepare_pacman_db()
@@ -700,6 +705,8 @@ def main(args):
         is_aur = pkg not in installed_native_pkgs
         install_f = install_pkg
         if is_aur:
+            if args.native_only:
+                continue
             install_f = install_pkg_aur
 
         def find_files(_):
@@ -741,6 +748,8 @@ def main(args):
         if version != requested_version:
             pkgs_version_not_found.append(pkg)
 
+    if args.pkg_check_only:
+        return
     filter_odict(installed_pkgs, pkgs_version_not_found)
 
     modified_config_files = odict()
@@ -1026,6 +1035,8 @@ subp = p.add_subparsers()
 
 checkp = subp.add_parser('check')
 checkp.add_argument('paths', nargs='+')
+checkp.add_argument('--native-only', action='store_true')
+checkp.add_argument('--pkg-check-only', action='store_true')
 checkp.set_defaults(func=main)
 
 merge_machine_branchesp = subp.add_parser('merge-features', description='''Merge feature branches $pkg>$feature-name into the corrensponding $pkg-$host branch for this machine.''')
