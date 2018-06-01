@@ -25,6 +25,11 @@ import getpass
 
 from version import earlier_version
 
+import requests
+import re
+
+import urllib.parse
+
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -218,6 +223,9 @@ def list_files(chroot_path):
 class PacmanException(Exception):
     pass
 
+class AurException(Exception):
+    pass
+
 
 def install_pkg(chroot_path, pkg, job, path=None):
     if path is None:
@@ -348,6 +356,25 @@ def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
     os.rmdir(pkgbuild_path)
     os.rmdir(version_path)
 
+    aur_pkg_page = 'https://aur.archlinux.org/packages/%s/' % pkg
+    r = requests.get(aur_pkg_page)
+    if r.status_code != 200:
+        raise AurException('Package %s not found in AUR at %s. (Did you install this package from a disabled pacman repo?)' % (pkg, aur_pkg_page)) 
+    find_re = '<a href="([^"]+)">Download snapshot</a>'
+    m = re.search(find_re, r.text)
+    if not m:
+        print(r.text)
+        raise AurException('no snapshot url found on %s' % aur_pkg_page)
+    snapshot_url = m.group(1)
+    snapshot_url_info = urllib.parse.urlsplit(snapshot_url)
+    url_path = Path(snapshot_url_info.path)
+    tar_file = url_path.name
+    # hack off any leftover ext
+    pkg_extract_dir = url_path.stem.split('.')[0]
+    if not snapshot_url_info.hostname:
+        snapshot_url = urllib.parse.urlunsplit(('https', 'aur.archlinux.org', snapshot_url_info.path, snapshot_url_info.query, snapshot_url_info.fragment))
+    print(snapshot_url)
+
     aur_pacman = Path(tempfile.mkdtemp(prefix='pacman')) / Path(pacman_base)
 
     # sudo -u $USERNAME -H git clone https://aur.archlinux.org/${PKG}.git $TEMPD
@@ -356,30 +383,25 @@ def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
     set -x
     set -e
     
-    _sudo() {
-    sudo -u $USERNAME -H $@
-    }
+    export PATH={PATH}
 
-    PATH="%s"
-    USERNAME="%s"
-    PACMANDB="%s"
-    TEMPD="%s"
-    PKG="%s"
-    CHROOT="%s"
-    VERSION_PATH="%s"
+    _sudo() {{
+    sudo -u {USERNAME} -H $@
+    }}
 
-    _sudo mkdir -p $TEMPD
-    cd $TEMPD
-    _sudo curl -q -L -O https://aur.archlinux.org/cgit/aur.git/snapshot/${PKG}.tar.gz
-    _sudo tar -xvf ${PKG}.tar.gz
-    _sudo rm ${PKG}.tar.gz
-    cd ${PKG}
-    _sudo makepkg -sr --asdeps --noconfirm
-    env PATH=$PATH /usr/bin/pacman -r $CHROOT -U --noconfirm --dbpath $PACMANDB -dd --nodeps ${TEMPD}/${PKG}/${PKG}*.pkg.tar.xz
-    _sudo env PATH=$PATH /usr/bin/pacman -Q --dbpath $PACMANDB $PKG > $VERSION_PATH
+    _sudo mkdir -p {TEMPD}
+    cd {TEMPD}
+    _sudo curl -q -L -O {SNAPSHOT}
+    _sudo tar -xvf {TAR_FILE}
+    _sudo rm {TAR_FILE}
+    cd {EXTRACT_DIR}
+    _sudo BUILDDIR=/tmp/makepkg-pacutil makepkg -sr --asdeps --noconfirm
+    /usr/bin/pacman -r {CHROOT} -U --noconfirm --dbpath {PACMANDB} -dd --nodeps {TEMPD}/{PKG}/{PKG}*.pkg.tar.xz
+    _sudo /usr/bin/pacman -Q --dbpath {PACMANDB} {PKG} > {VERSION_PATH}
     cd /
-    _sudo rm -rf $TEMPD
-    """ % (os.getenv('PATH'), username, str(PACMAN_DB_PATH), pkgbuild_path, pkg, chroot, version_path)
+    #_sudo rm -rf {TEMPD}
+    """.format(PATH=os.getenv('PATH'), USERNAME=username, PACMANDB=str(PACMAN_DB_PATH), TEMPD=pkgbuild_path, PKG=pkg, CHROOT=chroot, VERSION_PATH=version_path, SNAPSHOT=snapshot_url, TAR_FILE=tar_file, EXTRACT_DIR=pkg_extract_dir)
+    print(cmd)
     aur_pacman.write_text(cmd)
     chmod('+x', aur_pacman)
     aur_path = str(aur_pacman.parent.absolute()) + ':' + os.getenv('PATH')
@@ -703,6 +725,9 @@ def main(args):
                 version, pkg_files = install_f(chroot_path, pkg, find_files)
                 owned_check(version, pkg_files)
         except PacmanException as e:
+            error('skipping %s: %s' % (pkg, str(e)))
+            continue
+        except AurException as e:
             error('skipping %s: %s' % (pkg, str(e)))
             continue
 
