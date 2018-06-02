@@ -348,6 +348,7 @@ def nosync_pacman():
     ''' % (cmd, cmd))
     chmod('+x', nosync_pacman)
     path = str(nosync_pacman.parent.absolute()) + ':' + os.getenv('PATH')
+    assert(isinstance(path, str))
     return path
 
 
