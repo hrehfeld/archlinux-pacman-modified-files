@@ -538,9 +538,8 @@ class hg:
             return False
 
 
-def get_file_org(pkg, version, files, outdir):
+def get_file_org(pkg, version, files, outdir, is_aur):
     chroot_path = CHROOT_PATH / 'org' / pkg
-    is_aur = pkg not in installed_native_pkgs
     if is_aur:
         print('AUR package')
         pkgbuild_path = temp_dir('aurbuild-%s' % pkg)
@@ -917,7 +916,7 @@ def main(args):
         print('with files: %s' % ' '.join(fs))
 
         if repo.files_differ(fs):
-            fs = get_file_org(pkg, version, fs, repo_path)
+            fs = get_file_org(pkg, version, fs, repo_path, is_aur=pkg not in installed_native_pkgs)
             fs = list(map(str, fs))
             msg = tag_name(pkg, version)
             repo.commit_and_tag(fs, msg, tag)
