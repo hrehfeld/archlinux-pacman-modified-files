@@ -563,12 +563,11 @@ def get_file_org(pkg, version, files, outdir, is_aur):
             r.append(dst)
         return r
 
-    fs = install_pkg(chroot_path, pkg, _path, job)
-    if is_aur:
-        aur_version = Path(version_path).read_text()
-        aur_version = aur_version.split(' ', 1)[1].strip()
-        print('###### VERSION: %s %s' % (version, aur_version))
-        assert(version == aur_version)
+    ref_version, fs = install_pkg(chroot_path, pkg, job, str(_path))
+    #if is_aur:
+    #    aur_version = Path(version_path).read_text()
+    #    aur_version = aur_version.split(' ', 1)[1].strip()
+    assert(version == ref_version)
     return fs
 
 
@@ -677,7 +676,7 @@ def main(args):
     echo $@''')
     chmod('+x', noop_pacman)
     path = str(noop_pacman.parent.absolute()) + ':' + os.getenv('PATH')
-    chroot_default_files = install_pkg(CHROOT_PATH / 'DUMMY', 'DUMMY', list_files, path)
+    chroot_default_version, chroot_default_files = install_pkg(CHROOT_PATH / 'DUMMY', 'DUMMY', list_files, path)
 
     installed_pkgs = get_installed_pkgs()
     installed_native_pkgs = get_installed_pkgs(native_only=True)
