@@ -408,14 +408,14 @@ def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
     aur_path = str(aur_pacman.parent.absolute()) + ':' + os.getenv('PATH')
     return aur_path
 
-def search_filepath_state(p, state, pkgs):
+def iter_states(state, pkgs):
     for pkg, version in pkgs.items():
         if pkg not in state or version not in state[pkg]:
             continue
-        pfiles = state[pkg][version]
-        if p in pfiles:
-            return (pkg, version)
-    return None
+        yield (pkg, version), state[pkg][version]
+
+def search_filepath_state(p, state, pkgs):
+    return [info for info, filenames in iter_states(state, pkgs) if p in filenames]
     
 def search_filepath(p, pkgs):
     for pkg, versions in pkgs.items():
@@ -790,6 +790,8 @@ def main(args):
             version = None
             r = search_filepath_state(s, state, installed_pkgs)
             if r is not None:
+            # assume pacman ensures that no two packages may own the same file
+            r = r[0]
                 pkg, version = r
                 phash = state[pkg][version][s]
                 try:
