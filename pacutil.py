@@ -1032,7 +1032,10 @@ def sync(args):
 
         copy_archive(repo_file, fs_file, sudo=True)
     backup_repo.add(*files)
-    backup_repo.commit(message='synced')
+    if backup_repo.diff():
+        backup_repo.commit(message='synced')
+    else:
+        print('Nothing changed.')
         
 p = argparse.ArgumentParser(description='check archlinux files for changes')
 subp = p.add_subparsers()
