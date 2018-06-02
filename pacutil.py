@@ -659,6 +659,14 @@ def filter_odict(d, keys):
         if k in d:
             del d[k]
 
+
+def startswith_any(s, tests):
+    for test in tests:
+        if s.startswith(test):
+            return True
+    return False
+
+
 def main(args):
     if args.native_only:
         if not args.pkg_check_only:
@@ -765,60 +773,58 @@ def main(args):
     orphan_files = []
     modified_files = odict()
     uncheckable_files = []
+    files = []
     for d in checked_paths:
         if Path(d).is_file():
-            files = [Path(d)]
+            files += [Path(d)]
         else:
-            files = d.glob('**/*')
+            files += d.glob('**/*')
+    print('hashing %s files...' % len(files))
 
-        for p in files:
-            skip = False
-            presolved = p.resolve()
-            for ip in ignored_paths:
-                if str(p).startswith(ip) or str(presolved).startswith(ip):
-                    skip = True
-                    break
-            if skip:
-                continue
+    for p in files:
+        presolved = p.resolve()
+        if startswith_any(str(p), ignored_paths) or startswith_any(str(presolved), ignored_paths):
+            continue
 
-            p = presolved
-            if not p.is_file():
-                continue
-            s = str(p)
+        p = presolved
+        if not p.is_file():
+            continue
+        s = str(p)
 
-            pkg = None
-            version = None
-            r = search_filepath_state(s, state, installed_pkgs)
-            if r is not None:
+        pkg = None
+        version = None
+        r = search_filepath_state(s, state, installed_pkgs)
+        if r:
             # assume pacman ensures that no two packages may own the same file
             r = r[0]
-                pkg, version = r
-                phash = state[pkg][version][s]
-                try:
-                    hash = file_hash(p)
-                except PermissionError:
-                    txt = check_output(['sudo', 'cat', str(p)])
-                    hash = get_hash(txt)
-                if hash == phash:
-                    continue
-            else:
-                r = search_filepath(s, config_files)
-                if r:
-                    pkg, version = r
-                    if search_filepath(s, unmodified_config_files):
-                        assert(search_filepath(s, modified_config_files))
-                        continue
-
-                r = search_filepath(s, owned_files)
-                if r:
-                    pkg, version = r
-                    uncheckable_files.append((s, r))
-                    continue
-                orphan_files.append(s)
+            pkg, version = r
+            phash = state[pkg][version][s]
+            try:
+                hash = file_hash(p)
+            except PermissionError:
+                cmd = ['sudo', 'sha256sum', str(p)]
+                print(' '.join(cmd))
+                hash = get_hash(check_output(cmd))
+            if hash == phash:
                 continue
+        else:
+            r = search_filepath(s, config_files)
+            if r:
+                pkg, version = r
+                if search_filepath(s, unmodified_config_files):
+                    assert(search_filepath(s, modified_config_files))
+                    continue
 
-            modified_files.setdefault(pkg, [])
-            modified_files[pkg].append(s)
+            r = search_filepath(s, owned_files)
+            if r:
+                pkg, version = r
+                uncheckable_files.append((s, r))
+                continue
+            orphan_files.append(s)
+            continue
+
+        modified_files.setdefault(pkg, [])
+        modified_files[pkg].append(s)
 
     modified_files = odict(sorted([fs for fs in modified_files.items()], key=lambda fs: fs[0]))
 
