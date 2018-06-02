@@ -1019,9 +1019,6 @@ def sync(args):
     #git ls-tree -r "!$(hostname)" --name-only --full-name
     files = split_lines(machine_repo.status(all=True, **{'no-status': True}))
 
-    print(files)
-
-
     for f in files:
         repo_file = machine_repo_path / f
         fs_file = Path('/') / f
