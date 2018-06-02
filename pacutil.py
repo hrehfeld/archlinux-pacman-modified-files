@@ -400,7 +400,7 @@ def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
     /usr/bin/pacman -r {CHROOT} -U --noconfirm --dbpath {PACMANDB} -dd --nodeps {TEMPD}/{PKG}/{PKG}*.pkg.tar.xz
     _sudo /usr/bin/pacman -Q --dbpath {PACMANDB} {PKG} > {VERSION_PATH}
     cd /
-    #_sudo rm -rf {TEMPD}
+    _sudo rm -rf {TEMPD}
     """.format(PATH=os.getenv('PATH'), USERNAME=username, PACMANDB=str(PACMAN_DB_PATH), TEMPD=pkgbuild_path, PKG=pkg, CHROOT=chroot, VERSION_PATH=version_path, SNAPSHOT=snapshot_url, TAR_FILE=tar_file, EXTRACT_DIR=pkg_extract_dir)
     print(cmd)
     aur_pacman.write_text(cmd)
