@@ -4,6 +4,7 @@
 /etc/.updated
 /etc/adjtime
 /etc/ca-certificates/
+/etc/crypttab
 /etc/group
 /etc/gshadow
 /etc/ld.so.cache
@@ -25,4 +26,4 @@
 /etc/texmf/web2c/fmtutil.cnf
 /etc/udev/hwdb.bin
 /etc/xml/catalog
-/proc/6589/mounts
+/proc/
