@@ -119,6 +119,8 @@ BASE_DIR = Path(__file__).parent
 machine = socket.gethostname()
 username = getpass.getuser()
 
+arch = check_output(['uname', '-a']).decode('utf-8').split()[-2]
+
 repo_path = Path(handle_filepath(config.repo_path)).absolute()
 machine_repo_path = Path(handle_filepath(config.machine_repo_path)).absolute()
 backup_repo_path = Path(handle_filepath(config.backup_repo_path)).absolute()
@@ -139,7 +141,7 @@ pacman_base = TMP_PATH / 'pacman'
 
 PACMAN_DB_PATH = TMP_PATH / 'tmp-pacman'
 
-STATE_PATH = BASE_DIR / 'state'
+STATE_PATH = BASE_DIR / 'state' / arch
 
 PACMAN_FILE_LIST_CMD = ['pacman', '-Ql']
 MODIFIED = 0
