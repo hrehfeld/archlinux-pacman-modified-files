@@ -315,9 +315,8 @@ def get_owned_files(installed_pkgs):
         if len(l) != 2:
             raise Exception(line)
         pkg, f = l
-        # pkg was blacklisted
-        if pkg not in installed_pkgs:
-            continue
+
+        assert(pkg in installed_pkgs)
         ver = installed_pkgs[pkg]
         r.setdefault(pkg, odict())
         r[pkg].setdefault(ver, [])
