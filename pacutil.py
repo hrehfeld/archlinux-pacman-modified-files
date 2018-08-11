@@ -779,7 +779,9 @@ def main(args):
 
     state = load_state()
 
+    # a dict of pkg -> list of (modified_state, filepath)
     config_files = get_config_files()
+    
     modified_config_files = odict()
     unmodified_config_files = odict()
     for pkg, vs in config_files.items():
@@ -924,6 +926,7 @@ def main(args):
 
 
     pkgs = sorted(list(modified_files.keys()) + list(orphan_files.keys()))
+
     # unique pkgs only
     pkgs_unique = []
     for p in pkgs:
@@ -947,7 +950,7 @@ def main(args):
         tag_version = tag_escape(version)
         #if pkg in pkg_committed_versions and ListComp(natural_comp(tag_version)) < ListComp(natural_comp(pkg_committed_versions[pkg][-1])):
         if pkg in pkg_committed_versions and earlier_version(tag_version, pkg_committed_versions[pkg][-1]):
-            print('ERROR: history rewriting (i.e. downgrading) not supported: %s %s < %s' % (pkg, tag_version, pkg_committed_versions[pkg][-1]))
+            error('history rewriting (i.e. downgrading) not supported: %s %s < %s' % (pkg, tag_version, pkg_committed_versions[pkg][-1]))
             print(versions)
             print(natural_comp(tag_version), *[natural_comp(v) for v in pkg_committed_versions[pkg]])
             continue
@@ -976,7 +979,7 @@ def main(args):
                 cur = tag_escape(version)
                 last = pkg_committed_versions[branch][-1]
                 if earlier_version(cur, last):
-                    print('ERROR: history rewriting not supported %s %s < %s' % (branch, cur, last))
+                    error('history rewriting not supported %s %s < %s' % (branch, cur, last))
                     return
 
             has_pkg_branch = repo.has_branch(pkg)
