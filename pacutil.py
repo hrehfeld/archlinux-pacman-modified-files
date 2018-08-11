@@ -830,8 +830,11 @@ def main(args):
         version = None
         r = search_filepath_state(s, state, installed_pkgs)
         if r:
+            # pacman knows the file
+
             # assume pacman ensures that no two packages may own the same file
             r = r[0]
+
             pkg, version = r
             phash = state[pkg][version][s]
             try:
@@ -840,9 +843,11 @@ def main(args):
                 cmd = ['sudo', 'sha256sum', str(p)]
                 print(' '.join(cmd))
                 hash = get_hash(check_output(cmd))
+
             if hash == phash:
                 continue
         else:
+            # pacman knows this as a config file
             r = search_filepath(s, config_files)
             if r:
                 pkg, version = r
