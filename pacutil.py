@@ -1052,7 +1052,7 @@ check_packages_p = subp.add_parser('check-packages')
 check_packages_p.add_argument('--native-only', action='store_true')
 check_packages_p.set_defaults(func=check_packages)
 
-checkp = subp.add_parser('check')
+checkp = subp.add_parser('check-files')
 checkp.add_argument('paths', nargs='+')
 checkp.set_defaults(func=main)
 
