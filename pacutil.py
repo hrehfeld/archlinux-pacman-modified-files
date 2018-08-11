@@ -778,8 +778,6 @@ def main(args):
     installed_native_pkgs = get_installed_pkgs(native_only=True)
 
     state = load_state()
-    # drop pkgs that don't have state
-    filter_odict_f(installed_pkgs, lambda pkg, version: pkg not in state or state[pkg] != version)
 
     config_files = get_config_files()
     modified_config_files = odict()
@@ -934,6 +932,9 @@ def main(args):
         pkgs_unique.append(p)
     pkgs = pkgs_unique
 
+    # drop pkgs that don't have state
+    pkgs = [pkg for pkg in pkgs if pkg in state and installed_pkgs[pkg] in state[pkg]]
+    
     machine_branches = []
     for pkg in pkgs:
         # blacklisted or version not found
