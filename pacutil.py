@@ -30,6 +30,8 @@ import re
 
 import urllib.parse
 
+import time
+
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -65,6 +67,8 @@ MACHINE_SEP = '!'
 FEATURE_SEP = '>'
 
 DEFAULT_BRANCH = 'default'
+
+progress_every = 10
 
 
 def temp_dir(prefix):
@@ -798,11 +802,22 @@ def main(args):
         if Path(d).is_file():
             files += [Path(d)]
         else:
-    print('hashing %s files...' % len(files))
             files += clean_glob(d)
+    print('hashing %s files...' % len(files), )
 
-    for p in files:
+
+    start_time = time.perf_counter()
+    last_time = start_time
+    for ifile, p in enumerate(files):
+
+        now = time.perf_counter()
+        if now - last_time > progress_every:
+            last_time = now
+            print('%s%%' % int(ifile / len(files) * 100), )
+
         presolved = p.resolve()
+
+        # don't filter earlier as resolve is expensive
         if startswith_any(str(p), ignored_paths) or startswith_any(str(presolved), ignored_paths):
             continue
 
