@@ -197,6 +197,7 @@ def get_config_files():
         m = name_reg.match(l)
         if m:
             if name and fs:
+                assert(ver is not None)
                 r.setdefault(name, odict())
                 r[name].setdefault(ver, [])
                 r[name][ver] += fs
