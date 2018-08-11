@@ -10,6 +10,7 @@
 /etc/ld.so.cache
 /etc/mono/registry/last-btime
 /etc/pacman.d/gnupg/pubring.gpg~
+/etc/pacman.d/gnupg/secring.gpg
 /etc/passwd
 /etc/shadow
 /etc/shells

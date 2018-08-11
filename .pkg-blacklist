@@ -1,3 +1,5 @@
+cquery
+cuda
 d2x-rebirth-git
 discord
 discord-ptb
@@ -16,6 +18,7 @@ nvidia-libgl-beta
 nvidia-utils-beta
 opencl-nvidia-beta
 pcsxr-git
+reaper
 rtags-git
 signal-muon-git
 signal
@@ -29,3 +32,8 @@ ttf-heuristica
 ttf-material-design-icons
 unigine-superposition
 xboxdrv
+tesseract-git
+tesseract-data-git
+tesseract-data-deu-git
+tesseract-data-eng-git
+tesseract-data-osd-git

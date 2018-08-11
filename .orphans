@@ -80,9 +80,11 @@ gnupg /etc/pacman.d/gnupg/pubring.gpg
 gnupg /etc/pacman.d/gnupg/tofu.db
 gnupg /etc/pacman.d/gnupg/trustdb.gpg
 lm_sensors /etc/conf.d/lm_sensors
+nextcloud-client /etc/Nextcloud/sync-exclude.lst
 nvidia-utils-beta /etc/X11/xorg.conf.nvidia-xconfig-original
 systemd /etc/systemd/network/50-wired.network
 texlive-core /etc/texmf/ls-R
 texlive-core /etc/texmf/web2c/updmap.cfg
 xorg-server /etc/X11/xorg.conf
 xorg-server /etc/X11/xorg.conf.d/50-mouse-acceleration.conf
+xboxdrv /etc/default/xboxdrv
