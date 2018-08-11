@@ -114,6 +114,18 @@ def handle_filepath(p):
     return p
 
 
+def clean_glob(d: Path):
+    for child in d.iterdir():
+        yield child
+
+        # is_dir() can throw if symlink points to removed device
+        try:
+            if child.is_dir():
+                yield from clean_glob(child)
+        except OSError as e:
+            warning('Cannot check %s: %s' % (child, e))
+            continue
+
 BASE_DIR = Path(__file__).parent
 
 machine = socket.gethostname()
@@ -786,8 +798,8 @@ def main(args):
         if Path(d).is_file():
             files += [Path(d)]
         else:
-            files += d.glob('**/*')
     print('hashing %s files...' % len(files))
+            files += clean_glob(d)
 
     for p in files:
         presolved = p.resolve()
