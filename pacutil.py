@@ -775,7 +775,6 @@ def main(args):
     checked_paths = [Path(a) for a in args.paths]
     
     installed_pkgs = get_installed_pkgs()
-    print(installed_pkgs)
     installed_native_pkgs = get_installed_pkgs(native_only=True)
 
     state = load_state()
