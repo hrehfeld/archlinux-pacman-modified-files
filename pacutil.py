@@ -662,6 +662,11 @@ def filter_odict(d, keys):
             del d[k]
 
 
+def filter_odict_f(d, filter):
+    for k in d:
+        if not filter(k, d[k]):
+            del d[k]
+
 def startswith_any(s, tests):
     for test in tests:
         if s.startswith(test):
@@ -669,14 +674,7 @@ def startswith_any(s, tests):
     return False
 
 
-def main(args):
-    if args.native_only:
-        if not args.pkg_check_only:
-            # TODO better message
-            raise Exception('native_only is only valid for package checking, not file checking')
-
-    checked_paths = [Path(a) for a in args.paths]
-
+def check_packages(args):
     prepare_pacman_db()
 
     #get list of chroot pkg_owned_files
@@ -757,10 +755,18 @@ def main(args):
         if version != requested_version:
             pkgs_version_not_found.append(pkg)
 
-    if args.pkg_check_only:
-        return
-    filter_odict(installed_pkgs, pkgs_version_not_found)
+def main(args):
+    checked_paths = [Path(a) for a in args.paths]
+    
+    installed_pkgs = get_installed_pkgs()
+    print(installed_pkgs)
+    installed_native_pkgs = get_installed_pkgs(native_only=True)
 
+    state = load_state()
+    # drop pkgs that don't have state
+    filter_odict_f(installed_pkgs, lambda pkg, version: pkg not in state or state[pkg] != version)
+
+    config_files = get_config_files()
     modified_config_files = odict()
     unmodified_config_files = odict()
     for pkg, vs in config_files.items():
@@ -1042,10 +1048,12 @@ def sync(args):
 p = argparse.ArgumentParser(description='check archlinux files for changes')
 subp = p.add_subparsers()
 
+check_packages_p = subp.add_parser('check-packages')
+check_packages_p.add_argument('--native-only', action='store_true')
+check_packages_p.set_defaults(func=check_packages)
+
 checkp = subp.add_parser('check')
 checkp.add_argument('paths', nargs='+')
-checkp.add_argument('--native-only', action='store_true')
-checkp.add_argument('--pkg-check-only', action='store_true')
 checkp.set_defaults(func=main)
 
 merge_machine_branchesp = subp.add_parser('merge-features', description='''Merge feature branches $pkg>$feature-name into the corrensponding $pkg-$host branch for this machine.''')
