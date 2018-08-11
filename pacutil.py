@@ -159,7 +159,6 @@ PACMAN_DB_PATH = TMP_PATH / 'tmp-pacman'
 
 STATE_PATH = BASE_DIR / 'state' / arch
 
-PACMAN_FILE_LIST_CMD = ['pacman', '-Ql']
 MODIFIED = 0
 UNMODIFIED = 1
 PACMAN_CFG_FILE_LIST_CMD = ['pacman', '-Qii']
@@ -306,6 +305,7 @@ def parse_installed_packages(s):
         
 
 def get_owned_files(installed_pkgs):
+    PACMAN_FILE_LIST_CMD = ['pacman', '-Ql'] + list(installed_pkgs.keys())
     fs = check_output(PACMAN_FILE_LIST_CMD, universal_newlines=True).split('\n')
     r = odict()
     for line in fs:
