@@ -144,7 +144,7 @@ BASE_DIR = Path(__file__).parent
 machine = socket.gethostname()
 username = getpass.getuser()
 
-arch = check_output(['uname', '-a']).decode('utf-8').split()[-2]
+arch = None
 
 repo_path = Path(handle_filepath(config.repo_path)).absolute()
 machine_repo_path = Path(handle_filepath(config.machine_repo_path)).absolute()
@@ -166,7 +166,8 @@ pacman_base = TMP_PATH / 'pacman'
 
 PACMAN_DB_PATH = TMP_PATH / 'tmp-pacman'
 
-STATE_PATH = BASE_DIR / 'state' / arch
+def get_state_path():
+    return BASE_DIR / 'state' / arch
 
 MODIFIED = 0
 UNMODIFIED = 1
@@ -289,8 +290,9 @@ def install_pkg(chroot_path, pkg, job, path=None):
 
 def load_state():
     state = odict()
-    if STATE_PATH.exists():
-        for pkgf in STATE_PATH.glob('*.json'):
+    state_path = get_state_path()
+    if state_path.exists():
+        for pkgf in state_path.glob('*.json'):
             pkg = pkgf.stem
             with pkgf.open('r') as f:
                 state[pkg] = json.load(f, object_pairs_hook=odict)
@@ -298,10 +300,11 @@ def load_state():
 
 
 def save_state(state):
-    mkdir_p(STATE_PATH)
+    state_path = get_state_path()
+    mkdir_p(state_path)
     for pkg in state:
         state_str = json.dumps(state[pkg], indent=2)
-        pkgf = STATE_PATH / (pkg + '.json')
+        pkgf = state_path / (pkg + '.json')
         with pkgf.open('w') as f:
             f.write(state_str)
 
@@ -1097,6 +1100,8 @@ p.add_argument('--verbose', '-v', action='store_true', help='enable verbose info
 p.add_argument('--debug', action='store_true', help='enable debug output')
 p.add_argument('--quiet', '-q', action='store_true', help='disable informative output')
 
+p.add_argument('--arch', default=None, help='override detected architecture')
+
 subp = p.add_subparsers()
 
 check_packages_p = subp.add_parser('check-packages')
@@ -1118,6 +1123,11 @@ syncp = subp.add_parser('sync')
 syncp.set_defaults(func=sync)
 
 args = p.parse_args()
+
+if args.arch is None:
+    arch = check_output(['uname', '-a']).decode('utf-8').split()[-2]
+else:
+    arch = args.arch
 
 log_level = logging.WARNING
 if args.quiet:
