@@ -34,6 +34,12 @@ import time
 
 import logging
 
+try:
+    import coloredlogs
+    coloredlogs.install()
+except ImportError:
+    pass
+
 # can only import these after basicConfig is set
 debug, info = [lambda *args: None] * 2
 warning, error, critical = [lambda *args: print(*args)] * 3
