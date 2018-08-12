@@ -53,10 +53,6 @@ DEFAULT_BRANCH = 'default'
 
 progress_every = 10
 
-def is_repo(p):
-    return p.is_dir() and p.name == '.hg'
-
-
 BASE_DIR = Path(__file__).parent.parent
 
 username = getpass.getuser()
@@ -385,7 +381,11 @@ def get_orphan_pkgs():
 class hg:
     class HgException(Exception):
         pass
-    
+
+    @staticmethod
+    def is_repo_internal_dir(p):
+        return p.exists() and p.is_dir() and p.name == '.hg'
+
     def __init__(self, repo_path):
         self.repo_path = repo_path
 
@@ -433,10 +433,9 @@ class hg:
         return branch in split_lines(self.branches(q=True))
 
     def initialize(self):
-        repo_path = Path(self.repo_path)
-        if not repo_path.exists():
-            repo_path.mkdir()
-        if not (repo_path / '.hg').exists():
+        repo_path = Path(self.repo_path) / '.hg'
+        if not self.is_repo_internal_dir(repo_path):
+            mkdir_p(repo_path)
             self.init()
 
     def commit_and_tag(self, files, msg, tag):
@@ -448,6 +447,15 @@ class hg:
             #reassign tag
             self.tag(tag, local=True, force=True)
 
+
+    def repo_files(self):
+        r = self.status(A=True)
+        ls = split_lines(r)
+        ls = [l.split(' ', 1)[1] for l in ls if not l.startswith('?')]
+        return ls
+
+    
+            
 
     def ensure_branch(self, name, from_branch=None, commit=True, clean=False):
         if not self.has_branch(name):
@@ -515,16 +523,8 @@ def machine_branch(pkg):
 def machine_branch_main():
     return MACHINE_SEP + machine
 
-def hg_repo_files(repo):
-    r = repo.status(A=True)
-    ls = split_lines(r)
-    ls = [l.split(' ', 1)[1] for l in ls if not l.startswith('?')]
-    return ls
-
-repo_files = hg_repo_files
-
-
 class PkgRepo(hg):
+
     def files_differ(self, fs, integrity_check=False):
         #check if all files are present
         differs = False
@@ -537,9 +537,9 @@ class PkgRepo(hg):
                 log.info('%s differs from %s' % (p, f))
 
         #check if files were removed
-        for p in repo_files(self):
+        for p in self.repo_files():
             p = Path(p)
-            if not p.is_file() or is_repo(p):
+            if not p.is_file() or hg.is_repo_internal_dir(p):
                 continue
             f = Path('/') / p.relative_to(repo_path)
             if not f.exists():
