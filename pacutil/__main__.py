@@ -124,7 +124,7 @@ def clean_glob(d: Path):
             log.warning('Cannot check %s: %s' % (child, e))
             continue
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).parent.parent
 
 machine = socket.gethostname()
 username = getpass.getuser()
