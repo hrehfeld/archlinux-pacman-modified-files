@@ -704,7 +704,7 @@ def main(args):
         version = None
         r = search_filepath_state(s, state, installed_pkgs)
         if r:
-            # pacman knows the file
+            # pacman knows the file and we've seen it before in this
 
             # assume pacman ensures that no two packages may own the same file
             r = r[0]
