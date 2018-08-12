@@ -34,20 +34,7 @@ import time
 
 from . import logging as log
 
-class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-
-
-def colored(s, c):
-    return ('%s%s%s' % (c, s, bcolors.ENDC))
-
+from . import color as col
 
 with Path('.pkg-blacklist').open('r') as f:
     pkg_blacklist = [p.strip() for p in f.read().split('\n')]
@@ -442,11 +429,12 @@ def search_filepath(p, pkgs):
     return None
     
 def get_orphan_pkgs():
+    ls = []
     if ORPHAN_PKGS_FILE.exists():
         with ORPHAN_PKGS_FILE.open('r') as f:
-            ls = f.read()
+            ls = f.read().split('\n')
 
-    ls = filter(len, ls.split('\n'))
+    ls = filter(len, ls)
     ls = filter(lambda l: not l.startswith('#'), ls)
 
     r = odict()
@@ -710,7 +698,7 @@ def check_packages(args):
     config_files = get_config_files()
     for i, (pkg, version) in enumerate(installed_pkgs.items()):
         def print_progress(msg):
-            log.message('[%s/%s]: %s %s' % (i + 1, len(installed_pkgs), colored(pkg, bcolors.BOLD), msg))
+            log.message('[%s/%s]: %s %s' % (i + 1, len(installed_pkgs), col.header(pkg), msg))
         requested_version = version
 
         def owned_check(version, pkg_files):
@@ -937,7 +925,7 @@ def main(args):
         if pkg not in installed_pkgs:
             continue
         version = installed_pkgs[pkg]
-        log.message(colored('%s %s' % (pkg, version), bcolors.BOLD))
+        log.message(col.header('%s %s' % (pkg, version)))
 
         #can only update last version
         tag_version = tag_escape(version)
