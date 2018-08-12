@@ -890,7 +890,8 @@ def main(args):
 
     #print
     for pkg, fs in modified_files.items():
-        info(pkg, installed_pkgs[pkg])
+        info(pkg)
+        info(installed_pkgs[pkg])
         info('\t%s' % (' '.join(fs)))
 
     repo = PkgRepo(str(repo_path))
