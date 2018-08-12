@@ -37,7 +37,7 @@ from . import color as col
 from .util import temp_dir, mkdir_p, check_call, check_output, copy_archive, file_hash, get_hash, handle_filepath, clean_glob
 from .util import chmod, filter_odict, startswith_any, is_system_file, natural_comp, ListComp
 from .util import hostname as machine
-from .hg import hg as _hg
+from hg import hg as _hg
 
 hg = lambda repo_path: _hg(repo_path, log=log)
 
