@@ -716,7 +716,7 @@ def main(args):
             except PermissionError:
                 cmd = ['sudo', 'sha256sum', str(p)]
                 log.message(' '.join(cmd))
-                hash = get_hash(check_output(cmd))
+                hash = check_output(cmd)
 
             if hash == phash:
                 continue
