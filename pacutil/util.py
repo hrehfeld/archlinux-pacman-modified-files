@@ -102,12 +102,6 @@ def is_system_file(p):
     return s.startswith('proc') or s.startswith('sys')
 
 
-def split_lines(s):
-    ls = [s.strip() for s in s.split('\n')]
-    ls = [l for l in ls if l]
-    return ls
-
-
 def natural_comp(key):
     """ Sort the given iterable in the way that humans expect."""
     return [int(c) if c.isdigit() else c for c in re.split('([0-9]+)', key)]

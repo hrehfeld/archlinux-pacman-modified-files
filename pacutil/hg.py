@@ -1,7 +1,11 @@
 import subprocess
 from pathlib import Path
 
-from .util import split_lines
+def split_lines(s):
+    ls = [s.strip() for s in s.split('\n')]
+    ls = [l for l in ls if l]
+    return ls
+
 
 class hg:
     class HgException(Exception):
@@ -15,7 +19,7 @@ class hg:
         self.repo_path = repo_path
         self.log = log
 
-    def __getattr__(self, name):
+    def make_command(self, name):
         def f(*args, **kwargs):
             args = [str(a) for a in args]
             kws = []
@@ -41,6 +45,9 @@ class hg:
             return r
         return f
 
+    def __getattr__(self, name):
+        return self.make_command(name)
+
     def empty_commit(self, msg):
         t = Path(self.repo_path) / '.empty'
         t.write_text('')
@@ -57,7 +64,7 @@ class hg:
             self.commit(m='mrg: %s into %s' % (branch, cur))
 
     def has_branch(self, branch):
-        return branch in split_lines(self.branches(q=True))
+        return branch in self.branches(q=True)
 
     def initialize(self):
         repo_path = Path(self.repo_path) / '.hg'
@@ -76,8 +83,7 @@ class hg:
 
 
     def repo_files(self):
-        r = self.status(A=True)
-        ls = split_lines(r)
+        ls = self.status(A=True)
         ls = [l.split(' ', 1)[1] for l in ls if not l.startswith('?')]
         return ls
 
@@ -99,3 +105,13 @@ class hg:
             return False
 
 
+    def branches(self, *args, **kwargs):
+        return split_lines(self.make_command('branches')(*args, **kwargs))
+
+    def tags(self, *args, **kwargs):
+        return split_lines(self.make_command('tags')(*args, **kwargs))
+
+    def status(self, *args, **kwargs):
+        return split_lines(self.make_command('status')(*args, **kwargs))
+
+        

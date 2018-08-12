@@ -35,7 +35,7 @@ from . import logging as log
 from . import color as col
 
 from .util import temp_dir, mkdir_p, check_call, check_output, copy_archive, file_hash, get_hash, handle_filepath, clean_glob
-from .util import chmod, filter_odict, startswith_any, is_system_file, natural_comp, ListComp, split_lines
+from .util import chmod, filter_odict, startswith_any, is_system_file, natural_comp, ListComp
 from .util import hostname as machine
 from .hg import hg as _hg
 
@@ -674,10 +674,10 @@ def main(args):
     repo.ensure_branch(DEFAULT_BRANCH)
 
 
-    branches = split_lines(repo.branches(q=True))
+    branches = repo.branches(q=True)
     log.debug(branches)
 
-    tags = split_lines(repo.tags(q=True))
+    tags = repo.tags(q=True)
     #hg
     tags = [t for t in tags if t != 'tip']
     log.debug(tags)
@@ -822,7 +822,7 @@ def merge_machine_branches(args):
     if machine_repo.has_branch(DEFAULT_BRANCH):
         machine_repo.update(DEFAULT_BRANCH)
 
-    branches = split_lines(repo.branches(q=True))
+    branches = repo.branches(q=True)
     for (pkg, version) in get_installed_pkgs().items():
         branch = machine_branch(pkg)
         if branch in branches:
@@ -841,7 +841,7 @@ def sync(args):
     backup_repo.initialize()
 
     #git ls-tree -r "!$(hostname)" --name-only --full-name
-    files = split_lines(machine_repo.status(all=True, **{'no-status': True}))
+    files = machine_repo.status(all=True, **{'no-status': True})
 
     for f in files:
         repo_file = machine_repo_path / f
