@@ -32,22 +32,7 @@ import urllib.parse
 
 import time
 
-import logging
-
-try:
-    import coloredlogs
-    coloredlogs.install()
-except ImportError:
-    pass
-
-# can only import these after basicConfig is set
-debug, info = [lambda *args: None] * 2
-warning, error, critical = [lambda *args: print(*args)] * 3
-
-quiet_mode = False
-def message(*args):
-    if not quiet_mode:
-        print(*args)
+from . import logging as log
 
 class bcolors:
     HEADER = '\033[95m'
@@ -92,11 +77,11 @@ def mkdir_p(p):
     return p.mkdir(exist_ok=True, parents=True)
     
 def check_output(cmd, *args, **kwargs):
-    debug(' '.join(cmd))
+    log.debug(' '.join(cmd))
     return sp_output(cmd, *args, **kwargs)
 
 def check_call(cmd, *args, **kwargs):
-    debug(' '.join(cmd))
+    log.debug(' '.join(cmd))
     return sp_call(cmd, *args, **kwargs)
 
 def copy_archive(fa, fb, sudo=False):
@@ -136,7 +121,7 @@ def clean_glob(d: Path):
             if child.is_dir():
                 yield from clean_glob(child)
         except OSError as e:
-            warning('Cannot check %s: %s' % (child, e))
+            log.warning('Cannot check %s: %s' % (child, e))
             continue
 
 BASE_DIR = Path(__file__).parent
@@ -394,7 +379,7 @@ def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
     find_re = '<a href="([^"]+)">Download snapshot</a>'
     m = re.search(find_re, r.text)
     if not m:
-        debug(r.text)
+        log.debug(r.text)
         raise AurException('no snapshot url found on %s' % aur_pkg_page)
     snapshot_url = m.group(1)
     snapshot_url_info = urllib.parse.urlsplit(snapshot_url)
@@ -404,7 +389,7 @@ def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
     pkg_extract_dir = url_path.stem.split('.')[0]
     if not snapshot_url_info.hostname:
         snapshot_url = urllib.parse.urlunsplit(('https', 'aur.archlinux.org', snapshot_url_info.path, snapshot_url_info.query, snapshot_url_info.fragment))
-    info('Getting snapshot from %s', snapshot_url)
+    log.info('Getting snapshot from %s', snapshot_url)
 
     aur_pacman = Path(tempfile.mkdtemp(prefix='pacman')) / Path(pacman_base)
 
@@ -432,7 +417,7 @@ def aur_pacman(pkg, chroot, pkgbuild_path, version_path):
     cd /
     _sudo rm -rf {TEMPD}
     """.format(PATH=os.getenv('PATH'), USERNAME=username, PACMANDB=str(PACMAN_DB_PATH), TEMPD=pkgbuild_path, PKG=pkg, CHROOT=chroot, VERSION_PATH=version_path, SNAPSHOT=snapshot_url, TAR_FILE=tar_file, EXTRACT_DIR=pkg_extract_dir)
-    debug(cmd)
+    log.debug(cmd)
     aur_pacman.write_text(cmd)
     chmod('+x', aur_pacman)
     aur_path = str(aur_pacman.parent.absolute()) + ':' + os.getenv('PATH')
@@ -468,7 +453,7 @@ def get_orphan_pkgs():
     for line in ls:
         l = line.split(' ', 1)
         if len(l) != 2:
-            warning('malformed orphan pkg line: %s' % line)
+            log.warning('malformed orphan pkg line: %s' % line)
             continue
         pkg, f = l
         if pkg.startswith(INTERNAL_PKG_MARKER):
@@ -510,7 +495,7 @@ class hg:
                     kws.append(str(v))
                     
             cmd = ['hg', name, *kws, *args]
-            info(self.repo_path + ': ' + ' '.join(cmd))
+            log.info(self.repo_path + ': ' + ' '.join(cmd))
             try:
                 r = check_output(cmd, cwd=self.repo_path, universal_newlines=True, bufsize=16384 * 16)
             except subprocess.CalledProcessError as e:
@@ -571,7 +556,7 @@ class hg:
 def get_file_org(pkg, version, files, outdir, is_aur):
     chroot_path = CHROOT_PATH / 'org' / pkg
     if is_aur:
-        info('AUR package')
+        log.info('AUR package')
         pkgbuild_path = temp_dir('aurbuild-%s' % pkg)
         version_path = temp_dir('version-%s' % pkg)
         _path = aur_pacman(pkg, str(chroot_path), pkgbuild_path, version_path)
@@ -663,7 +648,7 @@ class PkgRepo(hg):
             p = repo_path / fp.relative_to('/')
             if not p.exists() or (integrity_check and file_hash(str(p)) != file_hash(f)):
                 differs = True
-                info('%s differs from %s' % (p, f))
+                log.info('%s differs from %s' % (p, f))
 
         #check if files were removed
         for p in repo_files(self):
@@ -673,7 +658,7 @@ class PkgRepo(hg):
             f = Path('/') / p.relative_to(repo_path)
             if not f.exists():
                 differs = True
-                info('%s differs from %s' % (p, f))
+                log.info('%s differs from %s' % (p, f))
         return differs
 
 
@@ -725,7 +710,7 @@ def check_packages(args):
     config_files = get_config_files()
     for i, (pkg, version) in enumerate(installed_pkgs.items()):
         def print_progress(msg):
-            message('[%s/%s]: %s %s' % (i + 1, len(installed_pkgs), colored(pkg, bcolors.BOLD), msg))
+            log.message('[%s/%s]: %s %s' % (i + 1, len(installed_pkgs), colored(pkg, bcolors.BOLD), msg))
         requested_version = version
 
         def owned_check(version, pkg_files):
@@ -756,7 +741,7 @@ def check_packages(args):
                 try:
                     owned_check(version, state[pkg][version])
                 except Exception as e:
-                    info(e)
+                    log.info(e)
                     print_progress('found')
                     version, pkg_files = install_f(chroot_path, pkg, find_files)
             else:
@@ -767,10 +752,10 @@ def check_packages(args):
                 version, pkg_files = install_f(chroot_path, pkg, find_files)
                 owned_check(version, pkg_files)
         except PacmanException as e:
-            error('skipping %s: %s' % (pkg, str(e)))
+            log.error('skipping %s: %s' % (pkg, str(e)))
             continue
         except AurException as e:
-            error('skipping %s: %s' % (pkg, str(e)))
+            log.error('skipping %s: %s' % (pkg, str(e)))
             continue
 
         if pkg_files:
@@ -815,7 +800,7 @@ def main(args):
             files += [Path(d)]
         else:
             files += clean_glob(d)
-    info('hashing %s files...' % len(files), )
+    log.info('hashing %s files...' % len(files), )
 
 
     start_time = time.perf_counter()
@@ -825,7 +810,7 @@ def main(args):
         now = time.perf_counter()
         if now - last_time > progress_every:
             last_time = now
-            debug('%s%%' % int(ifile / len(files) * 100), )
+            log.debug('%s%%' % int(ifile / len(files) * 100), )
 
         presolved = p.resolve()
 
@@ -853,7 +838,7 @@ def main(args):
                 hash = file_hash(p)
             except PermissionError:
                 cmd = ['sudo', 'sha256sum', str(p)]
-                message(' '.join(cmd))
+                log.message(' '.join(cmd))
                 hash = get_hash(check_output(cmd))
 
             if hash == phash:
@@ -899,9 +884,9 @@ def main(args):
 
     #print
     for pkg, fs in modified_files.items():
-        info(pkg)
-        info(installed_pkgs[pkg])
-        info('\t%s' % (' '.join(fs)))
+        log.info(pkg)
+        log.info(installed_pkgs[pkg])
+        log.info('\t%s' % (' '.join(fs)))
 
     repo = PkgRepo(str(repo_path))
     repo.initialize()
@@ -909,12 +894,12 @@ def main(args):
 
 
     branches = split_lines(repo.branches(q=True))
-    debug(branches)
+    log.debug(branches)
 
     tags = split_lines(repo.tags(q=True))
     #hg
     tags = [t for t in tags if t != 'tip']
-    debug(tags)
+    log.debug(tags)
     pkg_committed_versions = odict()
     for tag in tags:
         pkg, version = tag_split(tag)
@@ -922,7 +907,7 @@ def main(args):
         pkg_committed_versions[pkg].append(version)
     pkg_committed_versions = odict([(pkg, list(sorted(versions, key=lambda v: ListComp(natural_comp(v)))))
                                     for pkg, versions in pkg_committed_versions.items()])
-    debug(pkg_committed_versions)
+    log.debug(pkg_committed_versions)
 
     #machine main branch
     #branch = machine_branch_main()
@@ -952,15 +937,15 @@ def main(args):
         if pkg not in installed_pkgs:
             continue
         version = installed_pkgs[pkg]
-        message(colored('%s %s' % (pkg, version), bcolors.BOLD))
+        log.message(colored('%s %s' % (pkg, version), bcolors.BOLD))
 
         #can only update last version
         tag_version = tag_escape(version)
         #if pkg in pkg_committed_versions and ListComp(natural_comp(tag_version)) < ListComp(natural_comp(pkg_committed_versions[pkg][-1])):
         if pkg in pkg_committed_versions and earlier_version(tag_version, pkg_committed_versions[pkg][-1]):
-            error('history rewriting (i.e. downgrading) not supported: %s %s < %s' % (pkg, tag_version, pkg_committed_versions[pkg][-1]))
-            debug(versions)
-            debug(natural_comp(tag_version), *[natural_comp(v) for v in pkg_committed_versions[pkg]])
+            log.error('history rewriting (i.e. downgrading) not supported: %s %s < %s' % (pkg, tag_version, pkg_committed_versions[pkg][-1]))
+            log.debug(versions)
+            log.debug(natural_comp(tag_version), *[natural_comp(v) for v in pkg_committed_versions[pkg]])
             continue
 
         #create pkg branch from master branch
@@ -971,7 +956,7 @@ def main(args):
         fs = modified_files.get(pkg, [])
         for s in fs:
             assert(not str(s) in orphan_files)
-        info('with files: %s' % ' '.join(fs))
+        log.info('with files: %s' % ' '.join(fs))
 
         if repo.files_differ(fs):
             fs = get_file_org(pkg, version, fs, repo_path, is_aur=pkg not in installed_native_pkgs)
@@ -987,7 +972,7 @@ def main(args):
                 cur = tag_escape(version)
                 last = pkg_committed_versions[branch][-1]
                 if earlier_version(cur, last):
-                    error('history rewriting not supported %s %s < %s' % (branch, cur, last))
+                    log.error('history rewriting not supported %s %s < %s' % (branch, cur, last))
                     return
 
             has_pkg_branch = repo.has_branch(pkg)
@@ -1017,16 +1002,16 @@ def main(args):
         repo_machine_branch(version, fs)
 
     def print_paths(l):
-        message('\n'.join(map(str, l)))
+        log.message('\n'.join(map(str, l)))
 
     #print('### modified')
     #print_paths(modified_files)
 
 
-    message('''### These files are not associated with any package:
+    log.message('''### These files are not associated with any package:
     Add "<pkg> <filepath>" to %s to assign them to a package.''' % ORPHAN_PKGS_FILE)
     print_paths(ignored_orphan_files)
-    message('### uncheckable')
+    log.message('### uncheckable')
     print_paths(uncheckable_files)
 
 
@@ -1082,7 +1067,7 @@ def sync(args):
         fs_file = Path('/') / f
         backup_file = backup_repo_path / f
 
-        debug(repo_file, fs_file, backup_file)
+        log.debug(repo_file, fs_file, backup_file)
 
         if fs_file.exists():
             mkdir_p(backup_file.parent)
@@ -1093,7 +1078,7 @@ def sync(args):
     if backup_repo.diff():
         backup_repo.commit(message='synced')
     else:
-        message('Nothing changed.')
+        log.message('Nothing changed.')
         
 p = argparse.ArgumentParser(description='check archlinux files for changes')
 p.add_argument('--verbose', '-v', action='store_true', help='enable verbose info output')
@@ -1129,18 +1114,13 @@ if args.arch is None:
 else:
     arch = args.arch
 
-log_level = logging.WARNING
-if args.quiet:
-    quiet_mode = True
-else:
-    if args.debug:
-        log_level = logging.DEBUG
-    elif args.verbose:
-        log_level = logging.INFO
+log_level = log.WARNING
+if args.debug:
+    log_level = log.DEBUG
+elif args.verbose:
+    log_level = log.INFO
 
-logging.basicConfig(level=log_level)
-# import after basicConfig
-debug, info, warning, error, critical = logging.debug, logging.info, logging.warning, logging.error, logging.critical
+log.init(args.quiet, log_level)
 
 if not 'func' in args:
     p.print_help()
