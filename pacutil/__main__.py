@@ -35,6 +35,7 @@ from . import logging as log
 from . import color as col
 
 from .util import temp_dir, mkdir_p, check_call, check_output, copy_archive, file_hash, get_hash, handle_filepath, clean_glob
+from .util import chmod, filter_odict, startswith_any, is_system_file, natural_comp, ListComp, split_lines
 from .util import hostname as machine
 
 with Path('.pkg-blacklist').open('r') as f:
@@ -142,18 +143,6 @@ def get_config_files():
             
 
 PACSTRAP_INSTALL_PKG = ['/usr/bin/pacstrap', '-c', '-G', '-M', '-d']
-
-
-def chmod(mode, path, sudo=False):
-    cmd = ['chmod', '-R', mode, str(path)]
-    if sudo:
-        cmd = ['sudo'] + cmd
-    return check_call(cmd, stdout=DEVNULL)
-    
-
-def is_system_file(p):
-    s = str(p)
-    return s.startswith('proc') or s.startswith('sys')
 
 
 def list_files(chroot_path):
@@ -393,11 +382,6 @@ def get_orphan_pkgs():
         r[f] = pkg
     return r
 
-def split_lines(s):
-    ls = [s.strip() for s in s.split('\n')]
-    ls = [l for l in ls if l]
-    return ls
-
 def git_split_lines(s):
     r = split_lines(s)
     return [s[2:] if s.startswith('* ') else s for s in r]
@@ -518,27 +502,6 @@ def get_file_org(pkg, version, files, outdir, is_aur):
     return fs
 
 
-def natural_comp(key):
-    """ Sort the given iterable in the way that humans expect."""
-    return [int(c) if c.isdigit() else c for c in re.split('([0-9]+)', key)]
-
-class ListComp:
-    def __init__(self, l):
-        self.l = l
-
-    def __lt__(self, o):
-        for ka, kb in zip(self.l, o.l):
-            if ka == kb:
-                continue
-            else:
-                if isinstance(ka, int) and isinstance(kb, str):
-                    return True
-                if isinstance(kb, int) and isinstance(ka, str):
-                    return False
-                return ka < kb
-        return False
-                
-
 def tag_escape(tag):
     return tag.replace(':', '_')
 
@@ -599,24 +562,6 @@ def get_installed_pkgs(native_only=False):
     if native_only:
         flags += 'n'
     return parse_installed_packages(check_output(['pacman', flags], universal_newlines=True))
-
-
-def filter_odict(d, keys):
-    for k in keys:
-        if k in d:
-            del d[k]
-
-
-def filter_odict_f(d, filter):
-    for k in d:
-        if not filter(k, d[k]):
-            del d[k]
-
-def startswith_any(s, tests):
-    for test in tests:
-        if s.startswith(test):
-            return True
-    return False
 
 
 def check_packages(args):
