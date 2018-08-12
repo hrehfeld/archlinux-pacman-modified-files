@@ -382,11 +382,6 @@ def get_orphan_pkgs():
         r[f] = pkg
     return r
 
-def git_split_lines(s):
-    r = split_lines(s)
-    return [s[2:] if s.startswith('* ') else s for s in r]
-
-
 class hg:
     class HgException(Exception):
         pass
@@ -519,10 +514,6 @@ def machine_branch(pkg):
 
 def machine_branch_main():
     return MACHINE_SEP + machine
-
-def git_repo_files():
-    r = getattr(git, 'ls-tree')(r='HEAD', **{'name-only': True, 'full-tree': True})
-    return git_split_lines(r)
 
 def hg_repo_files(repo):
     r = repo.status(A=True)
