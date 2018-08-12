@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-from subprocess import check_output as sp_output, check_call as sp_call, DEVNULL
+from subprocess import DEVNULL
 import subprocess
 
 import json
@@ -9,8 +9,6 @@ from collections import OrderedDict as odict
 
 import shutil
 import os
-import hashlib
-import tempfile
 import sys
 
 import socket
@@ -36,6 +34,9 @@ from . import logging as log
 
 from . import color as col
 
+from .util import temp_dir, mkdir_p, check_call, check_output, copy_archive, file_hash, get_hash, handle_filepath, clean_glob
+from .util import hostname as machine
+
 with Path('.pkg-blacklist').open('r') as f:
     pkg_blacklist = [p.strip() for p in f.read().split('\n')]
 
@@ -51,69 +52,12 @@ DEFAULT_BRANCH = 'default'
 
 progress_every = 10
 
-
-def temp_dir(prefix):
-    path = tempfile.mkdtemp(prefix=prefix)
-    return path
-
-
 def is_repo(p):
     return p.is_dir() and p.name == '.hg'
 
-def mkdir_p(p):
-    return p.mkdir(exist_ok=True, parents=True)
-    
-def check_output(cmd, *args, **kwargs):
-    log.debug(' '.join(cmd))
-    return sp_output(cmd, *args, **kwargs)
-
-def check_call(cmd, *args, **kwargs):
-    log.debug(' '.join(cmd))
-    return sp_call(cmd, *args, **kwargs)
-
-def copy_archive(fa, fb, sudo=False):
-    cmd = ['cp', '-a', str(fa), str(fb)]
-    if sudo:
-        cmd = ['sudo'] + cmd
-    return check_call(cmd)
-    
-
-def file_hash(filename):
-    h = hashlib.sha256()
-    BUF_SIZE = 128*1024
-    with open(filename, 'rb', buffering=0) as f:
-        for b in iter(lambda : f.read(BUF_SIZE), b''):
-            h.update(b)
-    return h.hexdigest()
-
-def get_hash(s):
-    h = hashlib.sha256()
-    h.update(s)
-    return h.hexdigest()
-
-def handle_filepath(p):
-    vars = dict(HOSTNAME=str(socket.gethostname()), HOME=str(Path.home()))
-    p = p.strip()
-    for k, v in vars.items():
-        p = p.replace('$%s' % k, v)
-    return p
-
-
-def clean_glob(d: Path):
-    for child in d.iterdir():
-        yield child
-
-        # is_dir() can throw if symlink points to removed device
-        try:
-            if child.is_dir():
-                yield from clean_glob(child)
-        except OSError as e:
-            log.warning('Cannot check %s: %s' % (child, e))
-            continue
 
 BASE_DIR = Path(__file__).parent.parent
 
-machine = socket.gethostname()
 username = getpass.getuser()
 
 arch = None
@@ -131,7 +75,7 @@ if IGNORE_FILE.exists():
         ignored_paths = f.read().split('\n')
     ignored_paths = list(filter(lambda p: len(p), [p.strip() for p in ignored_paths]))
 
-TMP_PATH = Path(tempfile.mkdtemp(prefix='pacutil'))
+TMP_PATH = temp_dir('pacutil')
 CHROOT_PATH = TMP_PATH / 'chroot'
 
 pacman_base = TMP_PATH / 'pacman'
@@ -324,7 +268,7 @@ def install_pkg_aur(chroot_path, pkg, job):
     assert(isinstance(pkg, str))
     pkgbuild_path = temp_dir('aurbuild-%s' % pkg)
     version_path = temp_dir('version-%s' % pkg)
-    path = aur_pacman(pkg, str(chroot_path), pkgbuild_path, version_path)
+    path = aur_pacman(pkg, str(chroot_path), str(pkgbuild_path), str(version_path))
 
     version, pkg_files = install_pkg(chroot_path, pkg, job, path)
 
@@ -547,7 +491,7 @@ def get_file_org(pkg, version, files, outdir, is_aur):
         log.info('AUR package')
         pkgbuild_path = temp_dir('aurbuild-%s' % pkg)
         version_path = temp_dir('version-%s' % pkg)
-        _path = aur_pacman(pkg, str(chroot_path), pkgbuild_path, version_path)
+        _path = aur_pacman(pkg, str(chroot_path), str(pkgbuild_path), str(version_path))
     else:
         _path = nosync_pacman()
 
