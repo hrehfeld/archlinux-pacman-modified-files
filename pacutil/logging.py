@@ -26,13 +26,10 @@ def init(quiet, log_level):
         log_level = WARNING
         message = debug
 
-    print(log_level)
-
     log_level = _loglevels[log_level]
 
-    logging.basicConfig(level=log_level + 1)
-    coloredlogs.install()
-    # import after basicConfig
+    coloredlogs.install(level=log_level)
+    # import after basicConfig / install
 
     debug, info, warning, error, critical = logging.debug, logging.info, logging.warning, logging.error, logging.critical
 
